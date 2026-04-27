@@ -58,33 +58,118 @@ All GPU runs: backbone on CUDA, xcorr head on CPU (dynamic grouped conv cannot r
 
 ## Quick Start — Python Inference on Metis
 
-### 1. Activate the SDK environment and set PYTHONPATH
+### 1. Clone the repo and set up pysot
 
 ```bash
-source <SDK_ROOT>/venv/bin/activate
-export PYTHONPATH=/path/to/final_trained/pysot:$PYTHONPATH
-```
-
-Clone pysot if not already present:
-
-```bash
-cd /path/to/final_trained
+git clone git@github.com:jde-axelera/siamrpn_axelera.git
+cd siamrpn_axelera
 git clone https://github.com/STVIR/pysot.git
 ```
 
-### 2. Edit the config
+### 2. Obtain the checkpoint
+
+Email **jaydeep.de@axelera.ai** to receive `checkpoints/best_model.pth`. Place it at `checkpoints/best_model.pth` inside the repo.
+
+If you also receive pre-compiled Metis models (`compiled_template/`, `compiled_search/`) and the pre-exported `onnx/` files, skip steps 3–5 and go straight to step 6.
+
+### 3. Export ONNX from checkpoint
+
+Run this on a machine with PyTorch ≥ 2.0 (workstation or server, not required on Metis):
+
+```bash
+export PYTHONPATH=$(pwd)/pysot:$PYTHONPATH
+
+python scripts/export_onnx_split.py \
+    --cfg   configs/config_ir_siamese_infer.yaml \
+    --ckpt  checkpoints/best_model.pth \
+    --out   onnx/
+```
+
+This produces three models:
+
+| File | Input shape | Output | Runs on |
+|---|---|---|---|
+| `onnx/template_encoder.onnx` | `(1,3,127,127)` | `zf_0, zf_1, zf_2` | Metis (compiled) |
+| `onnx/search_encoder.onnx` | `(1,3,255,255)` | `xf_0, xf_1, xf_2` | Metis (compiled) |
+| `onnx/xcorr_head.onnx` | `zf_0..2, xf_0..2` | `cls, loc` | CPU (ONNX Runtime) |
+
+### 4. Fix xcorr\_head IR version (one-time)
+
+ORT 1.17.1 on Metis supports IR ≤ v9; the export produces IR v10:
+
+```bash
+python3 -c "
+import onnx
+m = onnx.load('onnx/xcorr_head.onnx')
+m.ir_version = 8
+onnx.save(m, 'onnx/xcorr_head_ir8.onnx')
+"
+```
+
+### 5. Compile encoders for Metis
+
+Run on the Metis machine with Voyager SDK activated.
+
+**Extract calibration images from your target-domain videos:**
+
+```bash
+python3 scripts/extract_cal_images.py \
+    --videos /path/to/video1.mp4 /path/to/video2.mp4 \
+    --out    cal_images/ \
+    --n      400
+```
+
+**Compile both encoders:**
+
+```bash
+source <SDK_ROOT>/venv/bin/activate
+export PYTHONPATH=$(pwd)/scripts:$PYTHONPATH
+
+axcompile \
+    --input        onnx/search_encoder.onnx \
+    --imageset     cal_images/ \
+    --transform    transform_search.py \
+    --input-shape  1,3,255,255 \
+    --input-data-layout NCHW \
+    --color-format RGB \
+    --imreader-backend PIL \
+    --dataset-len  400 \
+    --output       compiled_search/
+
+axcompile \
+    --input        onnx/template_encoder.onnx \
+    --imageset     cal_images/ \
+    --transform    transform_template.py \
+    --input-shape  1,3,127,127 \
+    --input-data-layout NCHW \
+    --color-format RGB \
+    --imreader-backend PIL \
+    --dataset-len  400 \
+    --output       compiled_template/
+```
+
+`transform_search.py` and `transform_template.py` in `scripts/` define `get_preprocess_transform(image)` — BGR float32 CHW, [0, 255], no ImageNet normalisation.
+
+### 6. Activate the SDK environment and set PYTHONPATH
+
+```bash
+source <SDK_ROOT>/venv/bin/activate
+export PYTHONPATH=$(pwd)/pysot:$PYTHONPATH
+```
+
+### 7. Edit the config
 
 Copy and edit `configs/track_config_axelera.json` — update all paths to match your machine:
 
 ```json
 {
   "paths": {
-    "pysot_root":          "/path/to/final_trained/pysot",
-    "model_cfg":           "/path/to/final_trained/configs/config_ir_siamese_infer.yaml",
-    "checkpoint":          "/path/to/final_trained/checkpoints/best_model.pth",
-    "template_encoder_ax": "<SDK_ROOT>/customers/arquimea/compiled_template_v2/compiled_model/model.json",
-    "search_encoder_ax":   "<SDK_ROOT>/customers/arquimea/compiled_search_v2/compiled_model/model.json",
-    "xcorr_head":          "/path/to/final_trained/onnx/xcorr_head_ir8.onnx",
+    "pysot_root":          "/path/to/siamrpn_axelera/pysot",
+    "model_cfg":           "/path/to/siamrpn_axelera/configs/config_ir_siamese_infer.yaml",
+    "checkpoint":          "/path/to/siamrpn_axelera/checkpoints/best_model.pth",
+    "template_encoder_ax": "/path/to/siamrpn_axelera/compiled_template/compiled_model/model.json",
+    "search_encoder_ax":   "/path/to/siamrpn_axelera/compiled_search/compiled_model/model.json",
+    "xcorr_head":          "/path/to/siamrpn_axelera/onnx/xcorr_head_ir8.onnx",
     "video":               "/path/to/input.mp4",
     "output":              "/path/to/output.mp4"
   },
@@ -92,7 +177,9 @@ Copy and edit `configs/track_config_axelera.json` — update all paths to match 
 }
 ```
 
-### 3. Run with particle filter
+### 8. Run
+
+With particle filter:
 
 ```bash
 python track_split_axelera.py --config configs/track_config_axelera.json
@@ -106,7 +193,7 @@ Providers — template/search: Axelera Metis  |  xcorr_head: CPU
 Processed 5966 frames in 308s  →  19.3 fps
 ```
 
-### 3b. Run without particle filter (faster, single-panel output)
+Without particle filter (faster, single-panel output):
 
 ```bash
 python track_split_axelera_nopf.py --config configs/track_config_axelera.json \
@@ -119,6 +206,8 @@ Writes a `_stats.json` alongside the video with fps, frame count, and timing.
 
 ## Quick Start — C++ Inference on Metis
 
+Complete **steps 1–5** from the Python section above, then:
+
 ### 1. Activate the SDK environment
 
 ```bash
@@ -130,34 +219,19 @@ This sets the firmware environment variables (`AIPU_FIRMWARE_OMEGA`, `AIPU_RUNTI
 ### 2. Build
 
 ```bash
-git clone git@github.com:jde-axelera/siamrpn_axelera.git
-cd siamrpn_axelera
 # Edit SDK path in Makefile_axelera if your SDK is not at /home/ubuntu/1.6/voyager-sdk
 make -f Makefile_axelera
 ```
 
-### 3. Prepare xcorr\_head (one-time)
-
-The ONNX export produces IR v10 but ORT 1.17.1 requires ≤ IR v9:
-
-```bash
-python3 -c "
-import onnx
-m = onnx.load('onnx/xcorr_head.onnx')
-m.ir_version = 8
-onnx.save(m, 'onnx/xcorr_head_ir8.onnx')
-"
-```
-
-### 4. Run
+### 3. Run
 
 ```bash
 ./track_split_axelera_cpp \
-    --template_encoder <SDK_ROOT>/customers/arquimea/compiled_template_v2/compiled_model/model.json \
-    --search_encoder   <SDK_ROOT>/customers/arquimea/compiled_search_v2/compiled_model/model.json \
+    --template_encoder compiled_template/compiled_model/model.json \
+    --search_encoder   compiled_search/compiled_model/model.json \
     --xcorr_head       onnx/xcorr_head_ir8.onnx \
     --video            /path/to/input.mp4 \
-    --output           /path/to/output.mp4\
+    --output           /path/to/output.mp4 \
     --display
 ```
 
@@ -168,83 +242,6 @@ onnx.save(m, 'onnx/xcorr_head_ir8.onnx')
 **`--ratios r1,r2,...`** — anchor aspect ratios. Default `0.37,0.56,0.79,1.11,2.26` (IR-trained model). Use `0.33,0.5,1,2,3` for the standard `siamrpn_r50_l234_dwxcorr` pretrained weights.
 
 **`--aipu_cores N`** — number of AIPU cores (default 4).
-
----
-
-## Compiling Models for Metis
-
-Use `axcompile` (part of Voyager SDK) to quantise and compile the ONNX encoders.
-
-### Prepare calibration images
-
-Extract frames from your target domain videos:
-
-```bash
-python3 scripts/extract_cal_images.py \
-    --videos /path/to/video1.mp4 /path/to/video2.mp4 \
-    --out    cal_images/ \
-    --n      400
-```
-
-### Compile search encoder
-
-```bash
-source <SDK_ROOT>/venv/bin/activate
-export PYTHONPATH=/path/to/transform/scripts:$PYTHONPATH
-
-axcompile \
-    --input        onnx/search_encoder.onnx \
-    --imageset     cal_images/ \
-    --transform    transform_search.py \
-    --input-shape  1,3,255,255 \
-    --input-data-layout NCHW \
-    --color-format RGB \
-    --imreader-backend PIL \
-    --dataset-len  400 \
-    --output       compiled_search/
-```
-
-### Compile template encoder
-
-```bash
-axcompile \
-    --input        onnx/template_encoder.onnx \
-    --imageset     cal_images/ \
-    --transform    transform_template.py \
-    --input-shape  1,3,127,127 \
-    --input-data-layout NCHW \
-    --color-format RGB \
-    --imreader-backend PIL \
-    --dataset-len  400 \
-    --output       compiled_template/
-```
-
-The compiled model manifest (`compiled_model/model.json`) is what you pass to `--template_encoder` / `--search_encoder`.
-
-### Transform scripts
-
-`transform_search.py` and `transform_template.py` define `get_preprocess_transform(image)` — a function that converts a PIL image to the same format used at inference (BGR float32 CHW, values in [0, 255], no ImageNet normalisation). See the provided examples in the repo.
-
----
-
-## ONNX Export (fine-tuned or custom checkpoint)
-
-Splits a trained checkpoint into three ONNX models:
-
-```bash
-export PYTHONPATH=/path/to/pysot:$PYTHONPATH
-
-python scripts/export_onnx_split.py \
-    --cfg   configs/config_ir_siamese_infer.yaml \
-    --ckpt  checkpoints/best_model.pth \
-    --out   onnx/
-```
-
-| Model | Input | Output | Runs on |
-|---|---|---|---|
-| `template_encoder.onnx` | `(1,3,127,127)` | `zf_0, zf_1, zf_2` | Metis (compiled) |
-| `search_encoder.onnx` | `(1,3,255,255)` | `xf_0, xf_1, xf_2` | Metis (compiled) |
-| `xcorr_head.onnx` | `zf_0..2, xf_0..2` | `cls, loc` | CPU (dynamic grouped conv) |
 
 ---
 
