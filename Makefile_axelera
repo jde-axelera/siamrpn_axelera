@@ -32,7 +32,7 @@ ORT_SO  = $(ORT_LIB)/libonnxruntime.so
 CV_FLAGS = $(shell pkg-config --cflags opencv4)
 CV_LIBS  = $(shell pkg-config --libs opencv4)
 
-CXXFLAGS = -O3 -std=c++17 \
+CXXFLAGS = -O3 -mavx2 -mfma -std=c++17 \
            -I$(AXR_INC) \
            -I$(ORT_INC) \
            $(CV_FLAGS)

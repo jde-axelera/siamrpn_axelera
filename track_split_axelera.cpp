@@ -1,18 +1,29 @@
 // track_split_axelera.cpp — SiamRPN++ tracker with Axelera Metis backbone (C++)
 // template_encoder + search_encoder on Axelera Metis (axruntime)
-// xcorr_head on CPU ONNX Runtime
+// xcorr split into: kernel-proj (ORT, init only) + search-proj (ORT) +
+//                   dw-xcorr (C++ AVX2) + head (ORT)
 // particle filter for robust tracking
+//
+// Optimizations vs original:
+//   1. -mavx2 -mfma in Makefile (vectorizes all float loops)
+//   2. __restrict__ on quantize/dequantize pointer args (removes aliasing barriers)
+//   3. xcorr_head.onnx split: 6 dynamic grouped convs replaced by C++ AVX2 dw-xcorr
+//      kernel projections only re-run at template updates (every tmpl_freq frames)
 //
 // Usage:
 //   ./track_split_axelera_cpp \
 //     --template_encoder /path/to/compiled_template_v2/compiled_model/model.json \
 //     --search_encoder   /path/to/compiled_search_v2/compiled_model/model.json \
-//     --xcorr_head       /path/to/xcorr_head.onnx \
+//     --kernel_proj      /path/to/xcorr_kernel_proj.onnx \
+//     --search_proj      /path/to/xcorr_search_proj.onnx \
+//     --head             /path/to/xcorr_head_only.onnx \
 //     --video            /path/to/video.mp4 \
 //     --output           /path/to/output.mp4 \
 //     [--init_bbox       348,147,38,84]   (omit to select interactively with mouse)
 //     [--ratios          0.33,0.5,1,2,3]  (default: 0.37,0.56,0.79,1.11,2.26 for IR model)
-//     [--display]                          (show live tracking window; press Q/ESC to quit)
+//     [--score_csv       /path/to/scores.csv]  (per-frame scores for comparison)
+//     [--max_frames      N]
+//     [--display]
 
 #include <algorithm>
 #include <array>
@@ -129,13 +140,17 @@ struct Config {
     float tmpl_alpha      = 0.25f;
     float tmpl_min_psr    = 6.0f;
 
-    std::string tmpl_enc_path;   // compiled_model/model.json
-    std::string srch_enc_path;   // compiled_model/model.json
-    std::string xcorr_path;      // xcorr_head.onnx (CPU)
+    std::string tmpl_enc_path;    // compiled_model/model.json
+    std::string srch_enc_path;    // compiled_model/model.json
+    std::string kernel_proj_path; // xcorr_kernel_proj.onnx (CPU, run at init only)
+    std::string search_proj_path; // xcorr_search_proj.onnx (CPU, every frame)
+    std::string head_path;        // xcorr_head_only.onnx   (CPU, every frame)
     std::string video_path;
     std::string output_path;
+    std::string score_csv_path;   // optional per-frame CSV output
     int   bbox_x = 0, bbox_y = 0, bbox_w = 0, bbox_h = 0;  // 0 = select interactively
     int   aipu_cores = 4;
+    int   max_frames = -1;
     bool  display = false;
 };
 
@@ -400,8 +415,9 @@ struct AxeleraEncoder {
     }
 
     // Quantize float32 NCHW → int8 NHWC (padded), filling output buffer in-place.
-    // info.dims[0..3] = [N, pH, pW, pC] in NHWC; padding[dim][start/end].
-    void quantize_into(const float* nchw, int C_in, int H_in, int W_in,
+    // __restrict__ on nchw removes GCC aliasing barriers so the inner c-loop
+    // (unit-stride writes to buf) can be auto-vectorized with -mavx2.
+    void quantize_into(const float* __restrict__ nchw, int C_in, int H_in, int W_in,
                        std::vector<int8_t>& buf, const axrTensorInfo& info) {
         int pH = (int)info.dims[1];
         int pW = (int)info.dims[2];
@@ -416,19 +432,24 @@ struct AxeleraEncoder {
 
         std::fill(buf.begin(), buf.end(), (int8_t)zp);
 
+        int8_t* __restrict__ dst = buf.data();
         for (int h = 0; h < H_in; h++) {
             for (int w = 0; w < W_in; w++) {
+                int8_t* __restrict__ row = dst + (h+h0)*pW*pC + (w+w0)*pC + c0;
+                #pragma GCC ivdep
                 for (int c = 0; c < C_in; c++) {
                     float val = nchw[c * H_in * W_in + h * W_in + w];
                     float q   = std::round(val / scale + zp);
                     q = std::max(-128.0f, std::min(127.0f, q));
-                    buf[(h+h0)*pW*pC + (w+w0)*pC + (c+c0)] = (int8_t)(int)q;
+                    row[c] = (int8_t)(int)q;
                 }
             }
         }
     }
 
     // Dequantize int8 NHWC (padded) → float32 NCHW (unpadded), returning a Tensor.
+    // __restrict__ removes aliasing barriers; inner w-loop (unit-stride reads from
+    // buf + stride-pC writes to out) benefits from -mavx2 scatter/gather.
     Tensor dequantize(const std::vector<int8_t>& buf, const axrTensorInfo& info) const {
         int pH = (int)info.dims[1];
         int pW = (int)info.dims[2];
@@ -449,12 +470,16 @@ struct AxeleraEncoder {
         out.shape = {1, (int64_t)C, (int64_t)H, (int64_t)W};
         out.data.resize(C * H * W);
 
-        for (int h = 0; h < H; h++)
-            for (int w = 0; w < W; w++)
-                for (int c = 0; c < C; c++) {
-                    int8_t q = buf[(h+h0)*pW*pC + (w+w0)*pC + (c+c0)];
-                    out.data[c*H*W + h*W + w] = ((float)(int)q - zp) * scale;
-                }
+        const int8_t* __restrict__ src = buf.data();
+        float*        __restrict__ dst = out.data.data();
+        for (int h = 0; h < H; h++) {
+            for (int w = 0; w < W; w++) {
+                const int8_t* __restrict__ row = src + (h+h0)*pW*pC + (w+w0)*pC + c0;
+                #pragma GCC ivdep
+                for (int c = 0; c < C; c++)
+                    dst[c*H*W + h*W + w] = ((float)(int)row[c] - zp) * scale;
+            }
+        }
         return out;
     }
 
@@ -547,6 +572,45 @@ run_template_encoder(AxeleraEncoder& enc, const std::vector<float>& tmpl_t, int 
     return { std::move(zf), ms };
 }
 
+// ─── Depthwise XCorr (AVX2-vectorized via __restrict__ + ivdep) ─────────────
+// search: (1,C,H,W), kernel: (1,C,kH,kW) → (1,C,H-kH+1,W-kW+1)
+// Same kernel used for both the LT tracker and this PF tracker.
+// The kernel_proj ONNX outputs shape (C,1,kH,kW) — identical memory layout
+// to (1,C,kH,kW), so we just set .shape[1]=C when loading.
+static Tensor dw_xcorr(const Tensor& search, const Tensor& kernel) {
+    const int C  = (int)search.shape[1];
+    const int H  = (int)search.shape[2], W  = (int)search.shape[3];
+    const int kH = (int)kernel.shape[2], kW = (int)kernel.shape[3];
+    const int oH = H - kH + 1, oW = W - kW + 1;
+
+    Tensor out;
+    out.shape = {1, (int64_t)C, (int64_t)oH, (int64_t)oW};
+    out.data.assign((size_t)C * oH * oW, 0.0f);
+
+    const float* __restrict__ X = search.data.data();
+    const float* __restrict__ K = kernel.data.data();
+    float*       __restrict__ O = out.data.data();
+
+    for (int c = 0; c < C; ++c) {
+        const float* __restrict__ Xc = X + c * H * W;
+        const float* __restrict__ Kc = K + c * kH * kW;
+        float*       __restrict__ Oc = O + c * oH * oW;
+        for (int dr = 0; dr < kH; ++dr) {
+            for (int dc = 0; dc < kW; ++dc) {
+                const float kval = Kc[dr * kW + dc];
+                for (int r = 0; r < oH; ++r) {
+                    const float* __restrict__ s = Xc + (r + dr) * W + dc;
+                    float*       __restrict__ d = Oc + r * oW;
+                    #pragma GCC ivdep
+                    for (int oc = 0; oc < oW; ++oc)
+                        d[oc] += kval * s[oc];
+                }
+            }
+        }
+    }
+    return out;
+}
+
 // ─── ORT helpers (xcorr_head CPU) ───────────────────────────────────────────
 static Ort::Value make_ort_value(Ort::MemoryInfo& mem, std::vector<float>& d,
                                   std::vector<int64_t> shape) {
@@ -591,12 +655,16 @@ int main(int argc, char* argv[]) {
     Config cfg;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
-        if      (a == "--template_encoder" && i+1 < argc) cfg.tmpl_enc_path = argv[++i];
-        else if (a == "--search_encoder"   && i+1 < argc) cfg.srch_enc_path = argv[++i];
-        else if (a == "--xcorr_head"       && i+1 < argc) cfg.xcorr_path    = argv[++i];
-        else if (a == "--video"            && i+1 < argc) cfg.video_path    = argv[++i];
-        else if (a == "--output"           && i+1 < argc) cfg.output_path   = argv[++i];
-        else if (a == "--aipu_cores"       && i+1 < argc) cfg.aipu_cores    = std::stoi(argv[++i]);
+        if      (a == "--template_encoder" && i+1 < argc) cfg.tmpl_enc_path    = argv[++i];
+        else if (a == "--search_encoder"   && i+1 < argc) cfg.srch_enc_path    = argv[++i];
+        else if (a == "--kernel_proj"      && i+1 < argc) cfg.kernel_proj_path = argv[++i];
+        else if (a == "--search_proj"      && i+1 < argc) cfg.search_proj_path = argv[++i];
+        else if (a == "--head"             && i+1 < argc) cfg.head_path        = argv[++i];
+        else if (a == "--video"            && i+1 < argc) cfg.video_path       = argv[++i];
+        else if (a == "--output"           && i+1 < argc) cfg.output_path      = argv[++i];
+        else if (a == "--score_csv"        && i+1 < argc) cfg.score_csv_path   = argv[++i];
+        else if (a == "--aipu_cores"       && i+1 < argc) cfg.aipu_cores       = std::stoi(argv[++i]);
+        else if (a == "--max_frames"       && i+1 < argc) cfg.max_frames       = std::stoi(argv[++i]);
         else if (a == "--display")                        cfg.display = true;
         else if (a == "--init_bbox"        && i+1 < argc)
             sscanf(argv[++i], "%d,%d,%d,%d",
@@ -630,24 +698,40 @@ int main(int argc, char* argv[]) {
     std::cout << " done (" << axr_num_model_outputs(srch_enc.model)
               << " outputs)\n";
 
-    // ── ORT xcorr_head (CPU) ─────────────────────────────────────────────────
+    // ── ORT sessions (CPU) ───────────────────────────────────────────────────
     Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "siamrpn_axelera");
     Ort::SessionOptions cpu_opts;
-    cpu_opts.SetIntraOpNumThreads(8);
+    cpu_opts.SetIntraOpNumThreads(4);
 
-    std::cout << "Loading xcorr_head (CPU ONNX)..." << std::flush;
-    Ort::Session xcorr_hd(env, cfg.xcorr_path.c_str(), cpu_opts);
-    std::cout << " done\n";
-
-    auto xc_in  = get_io_names(xcorr_hd, true);
-    auto xc_out = get_io_names(xcorr_hd, false);
     auto cstrs = [](const std::vector<std::string>& v) {
         std::vector<const char*> r; r.reserve(v.size());
         for (auto& s : v) r.push_back(s.c_str());
         return r;
     };
-    auto xc_in_c  = cstrs(xc_in);
-    auto xc_out_c = cstrs(xc_out);
+
+    std::cout << "Loading kernel_proj (CPU ONNX, runs at init only)..." << std::flush;
+    Ort::Session kp_sess(env, cfg.kernel_proj_path.c_str(), cpu_opts);
+    auto kp_in_names  = get_io_names(kp_sess, true);
+    auto kp_out_names = get_io_names(kp_sess, false);
+    auto kp_in_c  = cstrs(kp_in_names);
+    auto kp_out_c = cstrs(kp_out_names);
+    std::cout << " done (" << kp_in_names.size() << " in, " << kp_out_names.size() << " out)\n";
+
+    std::cout << "Loading search_proj (CPU ONNX, every frame)..." << std::flush;
+    Ort::Session sp_sess(env, cfg.search_proj_path.c_str(), cpu_opts);
+    auto sp_in_names  = get_io_names(sp_sess, true);
+    auto sp_out_names = get_io_names(sp_sess, false);
+    auto sp_in_c  = cstrs(sp_in_names);
+    auto sp_out_c = cstrs(sp_out_names);
+    std::cout << " done (" << sp_in_names.size() << " in, " << sp_out_names.size() << " out)\n";
+
+    std::cout << "Loading head (CPU ONNX, every frame)..." << std::flush;
+    Ort::Session hd_sess(env, cfg.head_path.c_str(), cpu_opts);
+    auto hd_in_names  = get_io_names(hd_sess, true);
+    auto hd_out_names = get_io_names(hd_sess, false);
+    auto hd_in_c  = cstrs(hd_in_names);
+    auto hd_out_c = cstrs(hd_out_names);
+    std::cout << " done (" << hd_in_names.size() << " in, " << hd_out_names.size() << " out)\n";
 
     Ort::MemoryInfo mem = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
 
@@ -662,11 +746,14 @@ int main(int argc, char* argv[]) {
     int total_f  = (int)cap.get(cv::CAP_PROP_FRAME_COUNT);
     printf("Video: %dx%d @%.2ffps, %d frames\n", VW, VH, fps_d, total_f);
 
-    cv::VideoWriter writer(cfg.output_path,
-                           cv::VideoWriter::fourcc('m','p','4','v'),
-                           fps_d, cv::Size(VW, VH));
-    if (!writer.isOpened()) {
-        fprintf(stderr, "Cannot open output: %s\n", cfg.output_path.c_str()); return 1;
+    cv::VideoWriter writer;
+    if (!cfg.output_path.empty()) {
+        writer.open(cfg.output_path,
+                    cv::VideoWriter::fourcc('m','p','4','v'),
+                    fps_d, cv::Size(VW, VH));
+        if (!writer.isOpened()) {
+            fprintf(stderr, "Cannot open output: %s\n", cfg.output_path.c_str()); return 1;
+        }
     }
 
     // Display is implicitly on when doing interactive selection (window already open)
@@ -696,6 +783,13 @@ int main(int argc, char* argv[]) {
         cap.set(cv::CAP_PROP_POS_FRAMES, 0);
     }
 
+    // ── CSV output setup ─────────────────────────────────────────────────────
+    FILE* csv_fp = nullptr;
+    if (!cfg.score_csv_path.empty()) {
+        csv_fp = fopen(cfg.score_csv_path.c_str(), "w");
+        if (csv_fp) fprintf(csv_fp, "frame,score,cx,cy,w,h,reacq\n");
+    }
+
     // ── Tracker state ────────────────────────────────────────────────────────
     double cx = cfg.bbox_x + (cfg.bbox_w - 1) / 2.0;
     double cy = cfg.bbox_y + (cfg.bbox_h - 1) / 2.0;
@@ -703,13 +797,14 @@ int main(int argc, char* argv[]) {
     float  th = (float)cfg.bbox_h;
     cv::Scalar avg_chans;
     std::vector<Tensor> zf;
+    std::vector<Tensor> zf_views;  // kernel projections, cached across frames
 
     NumpyRNG nrng; nrng.seed(42);
     int N = cfg.n_particles;
     std::vector<Particle>  pf(N);
     std::vector<float>     wts(N, 1.0f / N);
 
-    double t_pre = 0, t_srch = 0, t_xcorr = 0, t_pf2 = 0;
+    double t_pre = 0, t_srch = 0, t_sp = 0, t_xcorr = 0, t_head = 0, t_pf2 = 0;
     int    n_tracked = 0;
     auto   now_ms = []() {
         return (double)duration_cast<microseconds>(
@@ -728,6 +823,7 @@ int main(int argc, char* argv[]) {
     cv::Mat frame;
 
     while (cap.read(frame)) {
+        if (cfg.max_frames > 0 && fi >= cfg.max_frames) break;
 
         // ── Initialization ───────────────────────────────────────────────────
         if (!inited) {
@@ -750,6 +846,22 @@ int main(int argc, char* argv[]) {
                    (long)zf[0].shape[0], (long)zf[0].shape[1],
                    (long)zf[0].shape[2], (long)zf[0].shape[3]);
 
+            // Kernel projection: zf_0,1,2 → view_3,8,...,view_28 (cached until template update)
+            {
+                std::vector<Ort::Value> kp_vals;
+                for (int k = 0; k < 3; k++)
+                    kp_vals.push_back(make_ort_value(mem, zf[k].data, zf[k].shape));
+                auto kp_outs = run_session(kp_sess, kp_in_c, kp_vals, kp_out_c);
+                zf_views.clear();
+                for (auto& v : kp_outs) {
+                    Tensor t = ort_to_tensor(v);
+                    // kernel_proj outputs (C,1,kH,kW); memory layout == (1,C,kH,kW)
+                    t.shape = {1, t.shape[0], t.shape[2], t.shape[3]};
+                    zf_views.push_back(std::move(t));
+                }
+                printf("  kernel_proj: %zu views, each (1,256,5,5)\n", zf_views.size());
+            }
+
             // Init particles
             float cx0 = cfg.bbox_x + cfg.bbox_w / 2.0f;
             float cy0 = cfg.bbox_y + cfg.bbox_h / 2.0f;
@@ -765,7 +877,7 @@ int main(int argc, char* argv[]) {
                           cv::Scalar(0, 255, 0), 2);
             cv::putText(frame, "f=0 init", cv::Point(10, 25),
                         cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0,255,255), 1);
-            writer.write(frame);
+            if (writer.isOpened()) writer.write(frame);
             if (cfg.display) {
                 cv::imshow("SiamRPN++ Tracker  [Q/ESC = quit]", frame);
                 cv::waitKey(1);
@@ -799,29 +911,31 @@ int main(int argc, char* argv[]) {
         t_srch += now_ms() - tp;
         std::vector<Tensor>& xf = xf_raw;
 
-        // xcorr_head (CPU) — assemble named inputs zf_0..zf_N, xf_0..xf_N
+        // ── Search projection (ORT, static weights) ──────────────────────────
         tp = now_ms();
-        std::vector<Ort::Value> xc_vals;
-        for (auto& name : xc_in) {
-            std::vector<float>* src_data  = nullptr;
-            std::vector<int64_t>* src_shape = nullptr;
-            if (name.size() > 3 && name.substr(0, 3) == "zf_") {
-                int idx = std::stoi(name.substr(3));
-                src_data  = &zf[idx].data;
-                src_shape = &zf[idx].shape;
-            } else if (name.size() > 3 && name.substr(0, 3) == "xf_") {
-                int idx = std::stoi(name.substr(3));
-                src_data  = &xf[idx].data;
-                src_shape = &xf[idx].shape;
-            }
-            if (src_data) {
-                xc_vals.push_back(Ort::Value::CreateTensor<float>(
-                    mem, src_data->data(), src_data->size(),
-                    src_shape->data(), src_shape->size()));
-            }
+        std::vector<Ort::Value> sp_vals;
+        for (int k = 0; k < 3; k++)
+            sp_vals.push_back(make_ort_value(mem, xf[k].data, xf[k].shape));
+        auto sp_outs = run_session(sp_sess, sp_in_c, sp_vals, sp_out_c);
+        t_sp += now_ms() - tp;
+
+        // ── C++ AVX2 dw_xcorr (6 calls: 3 levels × cls+loc) ─────────────────
+        tp = now_ms();
+        std::vector<Tensor> xcorr_parts;
+        xcorr_parts.reserve(6);
+        for (int k = 0; k < 6; k++) {
+            Tensor search_k = ort_to_tensor(sp_outs[k]);
+            xcorr_parts.push_back(dw_xcorr(search_k, zf_views[k]));
         }
-        auto xc_outs = run_session(xcorr_hd, xc_in_c, xc_vals, xc_out_c);
         t_xcorr += now_ms() - tp;
+
+        // ── Head (ORT, static weights) ────────────────────────────────────────
+        tp = now_ms();
+        std::vector<Ort::Value> hd_vals;
+        for (auto& xc : xcorr_parts)
+            hd_vals.push_back(make_ort_value(mem, xc.data, xc.shape));
+        auto xc_outs = run_session(hd_sess, hd_in_c, hd_vals, hd_out_c);
+        t_head += now_ms() - tp;
 
         Tensor cls_t = ort_to_tensor(xc_outs[0]);
         Tensor loc_t = ort_to_tensor(xc_outs[1]);
@@ -966,6 +1080,17 @@ int main(int argc, char* argv[]) {
                     zf[k].data[p] = (1 - cfg.tmpl_alpha) * zf[k].data[p]
                                   + cfg.tmpl_alpha * new_zf_raw[k].data[p];
             }
+            // Re-run kernel projection with updated zf
+            std::vector<Ort::Value> kp_vals;
+            for (int k = 0; k < 3; k++)
+                kp_vals.push_back(make_ort_value(mem, zf[k].data, zf[k].shape));
+            auto kp_outs = run_session(kp_sess, kp_in_c, kp_vals, kp_out_c);
+            zf_views.clear();
+            for (auto& v : kp_outs) {
+                Tensor t = ort_to_tensor(v);
+                t.shape = {1, t.shape[0], t.shape[2], t.shape[3]};
+                zf_views.push_back(std::move(t));
+            }
         }
 
         // ── Draw + write frame ───────────────────────────────────────────────
@@ -978,6 +1103,10 @@ int main(int argc, char* argv[]) {
                         cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 0, 255), 2);
         }
 
+        if (csv_fp)
+            fprintf(csv_fp, "%d,%.6f,%.3f,%.3f,%.3f,%.3f,%d\n",
+                    fi, best.score, cx, cy, tw, th, (int)in_reacq);
+
         if (fi % 100 == 0) {
             fprintf(stderr, "  f=%5d  score=%.4f  cx=%.1f cy=%.1f  tw=%.1f th=%.1f"
                     "  srch=%.1fms%s  lo=%d hi=%d\n",
@@ -985,7 +1114,7 @@ int main(int argc, char* argv[]) {
                     in_reacq ? "  [REACQ]" : "", lo_streak, hi_streak);
         }
 
-        writer.write(frame);
+        if (writer.isOpened()) writer.write(frame);
 
         if (cfg.display) {
             cv::imshow("SiamRPN++ Tracker  [Q/ESC = quit]", frame);
@@ -998,26 +1127,31 @@ int main(int argc, char* argv[]) {
     }
 
     cap.release();
-    writer.release();
+    if (writer.isOpened()) writer.release();
     if (cfg.display) cv::destroyAllWindows();
+    if (csv_fp) fclose(csv_fp);
 
     srch_enc.print_latency_breakdown("search_encoder");
     tmpl_enc.print_latency_breakdown("template_encoder");
 
     axr_destroy(AXR_OBJECT(axr_ctx));
 
-    double tt = t_pre + t_srch + t_xcorr + t_pf2;
-    fprintf(stderr, "\n=== C++ (Metis) Timing breakdown over %d frames ===\n", n_tracked);
-    fprintf(stderr, "Total tracked:          %.0f ms  →  %.2f fps\n",
+    double tt = t_pre + t_srch + t_sp + t_xcorr + t_head + t_pf2;
+    fprintf(stderr, "\n=== C++ (Metis, optimized) Timing over %d frames ===\n", n_tracked);
+    fprintf(stderr, "Total tracked:              %.0f ms  →  %.2f fps\n",
             tt, n_tracked * 1000.0 / tt);
-    fprintf(stderr, "preproc (OpenCV):       %.2f ms/f  (%.1f%%)\n",
-            t_pre/n_tracked,   t_pre/tt*100);
-    fprintf(stderr, "search_enc (Metis):     %.2f ms/f  (%.1f%%)\n",
-            t_srch/n_tracked,  t_srch/tt*100);
-    fprintf(stderr, "xcorr_head (CPU):       %.2f ms/f  (%.1f%%)\n",
-            t_xcorr/n_tracked, t_xcorr/tt*100);
-    fprintf(stderr, "particle_filter:        %.2f ms/f  (%.1f%%)\n",
-            t_pf2/n_tracked,   t_pf2/tt*100);
+    fprintf(stderr, "preproc (OpenCV):           %.2f ms/f  (%.1f%%)\n",
+            t_pre/n_tracked,    t_pre/tt*100);
+    fprintf(stderr, "search_enc (Metis):         %.2f ms/f  (%.1f%%)\n",
+            t_srch/n_tracked,   t_srch/tt*100);
+    fprintf(stderr, "search_proj (ORT):          %.2f ms/f  (%.1f%%)\n",
+            t_sp/n_tracked,     t_sp/tt*100);
+    fprintf(stderr, "dw-xcorr (AVX2, 6×):        %.2f ms/f  (%.1f%%)\n",
+            t_xcorr/n_tracked,  t_xcorr/tt*100);
+    fprintf(stderr, "head (ORT):                 %.2f ms/f  (%.1f%%)\n",
+            t_head/n_tracked,   t_head/tt*100);
+    fprintf(stderr, "particle_filter:            %.2f ms/f  (%.1f%%)\n",
+            t_pf2/n_tracked,    t_pf2/tt*100);
 
     return 0;
 }
