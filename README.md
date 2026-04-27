@@ -42,6 +42,67 @@ Measured on a 640×480 @ 25 fps thermal drone sequence (5 966 frames).
 
 ---
 
+## Quick Start — Python Inference on Metis
+
+### 1. Activate the SDK environment and set PYTHONPATH
+
+```bash
+source <SDK_ROOT>/venv/bin/activate
+export PYTHONPATH=/path/to/final_trained/pysot:$PYTHONPATH
+```
+
+Clone pysot if not already present:
+
+```bash
+cd /path/to/final_trained
+git clone https://github.com/STVIR/pysot.git
+```
+
+### 2. Edit the config
+
+Copy and edit `configs/track_config_axelera.json` — update all paths to match your machine:
+
+```json
+{
+  "paths": {
+    "pysot_root":          "/path/to/final_trained/pysot",
+    "model_cfg":           "/path/to/final_trained/configs/config_ir_siamese_infer.yaml",
+    "checkpoint":          "/path/to/final_trained/checkpoints/best_model.pth",
+    "template_encoder_ax": "<SDK_ROOT>/customers/arquimea/compiled_template_v2/compiled_model/model.json",
+    "search_encoder_ax":   "<SDK_ROOT>/customers/arquimea/compiled_search_v2/compiled_model/model.json",
+    "xcorr_head":          "/path/to/final_trained/onnx/xcorr_head_ir8.onnx",
+    "video":               "/path/to/input.mp4",
+    "output":              "/path/to/output.mp4"
+  },
+  "init_bbox": [x, y, w, h]
+}
+```
+
+### 3. Run with particle filter
+
+```bash
+python track_split_axelera.py --config configs/track_config_axelera.json
+```
+
+Expected output:
+```
+Providers — template/search: Axelera Metis  |  xcorr_head: CPU
+  template_encoder (Metis): 5.1 ms
+  f=    0  score=1.000  cx=367.0 cy=189.0  ...
+Processed 5966 frames in 308s  →  19.3 fps
+```
+
+### 3b. Run without particle filter (faster, single-panel output)
+
+```bash
+python track_split_axelera_nopf.py --config configs/track_config_axelera.json \
+    --output output_nopf.mp4
+```
+
+Writes a `_stats.json` alongside the video with fps, frame count, and timing.
+
+---
+
 ## Quick Start — C++ Inference on Metis
 
 ### 1. Activate the SDK environment
@@ -212,8 +273,10 @@ Template features are center-cropped from the compiled model output `(1,256,15,1
 ## Files
 
 ```
-├── track_split_axelera.cpp         C++ inference (Metis + CPU xcorr + PF)
-├── Makefile_axelera                build recipe
+├── track_split_axelera.py          Python inference — Metis + CPU xcorr + PF
+├── track_split_axelera_nopf.py     Python inference — Metis + CPU xcorr, no PF
+├── track_split_axelera.cpp         C++ inference   — Metis + CPU xcorr + PF
+├── Makefile_axelera                C++ build recipe
 ├── configs/
 │   ├── config_ir_siamese.yaml      training config
 │   ├── config_ir_siamese_infer.yaml inference config
@@ -222,8 +285,7 @@ Template features are center-cropped from the compiled model output `(1,256,15,1
 │   ├── export_onnx_split.py        split ONNX export
 │   ├── analyze_anchors.py          compute anchor ratios from annotations
 │   ├── train_siamrpn_aws.py        training script
-│   ├── track_split.py              Python inference (GPU)
-│   ├── track_split_axelera.py      Python inference (Metis + CPU xcorr)
+│   ├── track_split.py              Python inference (GPU, ONNX Runtime)
 │   └── compare_sam2_vs_metis.py    side-by-side comparison video vs SAM2
 └── env.yml                         conda environment spec
 ```
