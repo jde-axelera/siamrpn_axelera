@@ -130,7 +130,8 @@ This sets the firmware environment variables (`AIPU_FIRMWARE_OMEGA`, `AIPU_RUNTI
 ### 2. Build
 
 ```bash
-cd final_trained
+git clone git@github.com:jde-axelera/siamrpn_axelera.git
+cd siamrpn_axelera
 # Edit SDK path in Makefile_axelera if your SDK is not at /home/ubuntu/1.6/voyager-sdk
 make -f Makefile_axelera
 ```
