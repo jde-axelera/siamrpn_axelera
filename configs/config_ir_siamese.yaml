@@ -1,0 +1,232 @@
+META_ARC: "siamrpn_r50_l234_dwxcorr"
+
+BACKBONE:
+    TYPE: "resnet50"
+    KWARGS:
+        used_layers: [2, 3, 4]
+    PRETRAINED: ""
+    TRAIN_LAYERS: ['layer2', 'layer3', 'layer4']
+    LAYERS_LR: 0.1
+    TRAIN_EPOCH: 10
+
+ADJUST:
+    ADJUST: true
+    TYPE: "AdjustAllLayer"
+    KWARGS:
+        in_channels: [512, 1024, 2048]
+        out_channels: [256, 256, 256]
+
+RPN:
+    TYPE: 'MultiRPN'
+    KWARGS:
+        anchor_num: 5
+        in_channels: [256, 256, 256]
+        weighted: true
+
+MASK:
+    MASK: false
+
+REFINE:
+    REFINE: false
+
+ANCHOR:
+    STRIDE: 8
+    RATIOS: [0.37, 0.56, 0.79, 1.11, 2.26]
+    SCALES: [8]
+    ANCHOR_NUM: 5
+
+TRACK:
+    TYPE: 'SiamRPNTracker'
+    PENALTY_K: 0.05
+    WINDOW_INFLUENCE: 0.42
+    LR: 0.38
+    EXEMPLAR_SIZE: 127
+    INSTANCE_SIZE: 255
+    BASE_SIZE: 8
+    CONTEXT_AMOUNT: 0.5
+
+TRAIN:
+    EXEMPLAR_SIZE: 127
+    SEARCH_SIZE: 255
+    BASE_SIZE: 8
+    OUTPUT_SIZE: 25
+
+    EPOCH: 500
+    START_EPOCH: 0
+    BATCH_SIZE: 32
+    NUM_WORKERS: 8
+    MOMENTUM: 0.9
+    WEIGHT_DECAY: 0.0001
+
+    BASE_LR: 0.005
+    LR:
+        TYPE: 'log'
+        KWARGS:
+            start_lr: 0.005
+            end_lr: 0.00001
+    LR_WARMUP:
+        WARMUP: true
+        TYPE: 'step'
+        EPOCH: 5
+        KWARGS:
+            start_lr: 0.0001
+            end_lr: 0.005
+
+    THR_HIGH: 0.6
+    THR_LOW: 0.3
+    NEG_NUM: 16
+    POS_NUM: 16
+    TOTAL_NUM: 64
+
+    CLS_WEIGHT: 1.0
+    LOC_WEIGHT: 1.2
+    GRAD_CLIP: 10.0
+    GRAD_ACCUM_STEPS: 4   # effective batch = BATCH_SIZE x GRAD_ACCUM_STEPS = 128
+    PRINT_FREQ: 50
+    LOG_GRADS: false
+
+    LOG_DIR: '/home/ubuntu/data/siamrpn_training/pysot/logs/all_datasets_ir_siamese'
+    SNAPSHOT_DIR: '/home/ubuntu/data/siamrpn_training/pysot/snapshot/all_datasets_ir_siamese'
+    PRETRAINED: ""
+    RESUME: ""
+
+DATASET:
+
+    # 7 registered datasets (MSRS/MASSMIND removed — no motion signal; DUT-Anti-UAV excluded — RGB)
+    NAMES: ('ANTIUAV410','VTMOT','MVSS',
+            'DUTVTUAV','ANTIUAV300','BIRDSAI','HITUAV')
+    VIDEOS_PER_EPOCH: 10000
+
+    # ── Anti-UAV410 ──────────────────────────────────────────────────────────
+    ANTIUAV410:
+        ROOT: '/home/ubuntu/data/siamrpn_training/data/anti_uav410/train'
+        ANNO: '/home/ubuntu/data/siamrpn_training/data/anti_uav410/train_pysot.json'
+        FRAME_RANGE: 50
+        NUM_USE: -1
+        WEIGHT: 3.0          # up-weight: primary IR SOT dataset
+
+    ANTIUAV410_VAL:
+        ROOT: '/home/ubuntu/data/siamrpn_training/data/anti_uav410/val'
+        ANNO: '/home/ubuntu/data/siamrpn_training/data/anti_uav410/val_pysot.json'
+        FRAME_RANGE: 50
+        NUM_USE: -1
+
+    # # ── MSRS (paired IR/visible) ─────────────────────────────────────────────
+    # MSRS:
+    #     ROOT: '/home/ubuntu/data/siamrpn_training/data/msrs/train'
+    #     ANNO: '/home/ubuntu/data/siamrpn_training/data/msrs/train_pysot.json'
+    #     FRAME_RANGE: 1
+    #     NUM_USE: -1
+    #     WEIGHT: 1.0
+
+    # MSRS_VAL:
+    #     ROOT: '/home/ubuntu/data/siamrpn_training/data/msrs/test'
+    #     ANNO: '/home/ubuntu/data/siamrpn_training/data/msrs/test_pysot.json'
+    #     FRAME_RANGE: 1
+    #     NUM_USE: -1
+
+    # ── VT-MOT / PFTrack ────────────────────────────────────────────────────
+    VTMOT:
+        ROOT: '/home/ubuntu/data/siamrpn_training/data/vtmot/train'
+        ANNO: '/home/ubuntu/data/siamrpn_training/data/vtmot/train_pysot.json'
+        FRAME_RANGE: 30
+        NUM_USE: -1
+        WEIGHT: 2.0
+
+    VTMOT_VAL:
+        ROOT: '/home/ubuntu/data/siamrpn_training/data/vtmot/test'
+        ANNO: '/home/ubuntu/data/siamrpn_training/data/vtmot/test_pysot.json'
+        FRAME_RANGE: 30
+        NUM_USE: -1
+
+    # # ── MassMIND (maritime LWIR) ─────────────────────────────────────────────
+    # MASSMIND:
+    #     ROOT: '/home/ubuntu/data/siamrpn_training/data/massmind/images'
+    #     ANNO: '/home/ubuntu/data/siamrpn_training/data/massmind/train_pysot.json'
+    #     FRAME_RANGE: 1
+    #     NUM_USE: -1
+    #     WEIGHT: 1.0
+
+    # ── MVSS-Baseline (RGB-thermal video) ────────────────────────────────────
+    MVSS:
+        ROOT: '/home/ubuntu/data/siamrpn_training/data/mvss/sequences'
+        ANNO: '/home/ubuntu/data/siamrpn_training/data/mvss/train_pysot.json'
+        FRAME_RANGE: 20
+        NUM_USE: -1
+        WEIGHT: 1.5
+
+    # ── DUT-VTUAV (RGB+Thermal UAV, 500 seqs, 1.7M frames) ──────────────────
+    DUTVTUAV:
+        ROOT: '/home/ubuntu/data/siamrpn_training/data/dut_vtuav/train'
+        ANNO: '/home/ubuntu/data/siamrpn_training/data/dut_vtuav/train_pysot.json'
+        FRAME_RANGE: 50
+        NUM_USE: -1
+        WEIGHT: 2.5          # large-scale, high-quality — strong signal
+
+    DUTVTUAV_VAL:
+        ROOT: '/home/ubuntu/data/siamrpn_training/data/dut_vtuav/test'
+        ANNO: '/home/ubuntu/data/siamrpn_training/data/dut_vtuav/test_pysot.json'
+        FRAME_RANGE: 50
+        NUM_USE: -1
+
+    # ── DUT-Anti-UAV — EXCLUDED (RGB dataset, not IR-only) ───────────────────
+    # DUTANTIUAV:
+    #     ROOT: '/home/ubuntu/data/siamrpn_training/data/dut_anti_uav/images'
+    #     ANNO: '/home/ubuntu/data/siamrpn_training/data/dut_anti_uav/train_pysot.json'
+    #     FRAME_RANGE: 30
+    #     WEIGHT: 2.0
+
+    # ── Anti-UAV 300 (IR + RGB) ──────────────────────────────────────────────
+    ANTIUAV300:
+        ROOT: '/home/ubuntu/data/siamrpn_training/data/anti_uav300/train'
+        ANNO: '/home/ubuntu/data/siamrpn_training/data/anti_uav300/train_pysot.json'
+        FRAME_RANGE: 50
+        NUM_USE: -1
+        WEIGHT: 2.5          # same domain as AntiUAV410
+
+    ANTIUAV300_VAL:
+        ROOT: '/home/ubuntu/data/siamrpn_training/data/anti_uav300/val'
+        ANNO: '/home/ubuntu/data/siamrpn_training/data/anti_uav300/val_pysot.json'
+        FRAME_RANGE: 50
+        NUM_USE: -1
+
+    # ── BIRDSAI (TIR aerial wildlife, 48 real sequences) ─────────────────────
+    BIRDSAI:
+        ROOT: '/home/ubuntu/data/siamrpn_training/data/birdsai/train'
+        ANNO: '/home/ubuntu/data/siamrpn_training/data/birdsai/train_pysot.json'
+        FRAME_RANGE: 30
+        NUM_USE: -1
+        WEIGHT: 1.5          # unique domain boosts generalisation
+
+    BIRDSAI_VAL:
+        ROOT: '/home/ubuntu/data/siamrpn_training/data/birdsai/test'
+        ANNO: '/home/ubuntu/data/siamrpn_training/data/birdsai/test_pysot.json'
+        FRAME_RANGE: 30
+        NUM_USE: -1
+
+    # ── HIT-UAV (IR detection → pseudo-SOT, 2898 images) ────────────────────
+    HITUAV:
+        ROOT: '/home/ubuntu/data/siamrpn_training/data/hit_uav/images'
+        ANNO: '/home/ubuntu/data/siamrpn_training/data/hit_uav/train_pysot.json'
+        FRAME_RANGE: 5       # short range: pseudo-sequences from detections
+        NUM_USE: -1
+        WEIGHT: 1.0
+
+    TEMPLATE:
+        SHIFT: 4
+        SCALE: 0.10
+        SCALE_ONE_SIDED: True   # only shrink target, never enlarge
+        BLUR: 0.2
+        FLIP: 0.5
+        COLOR: 0.0      # PCA jitter disabled — IR not RGB
+
+    SEARCH:
+        SHIFT: 64
+        SCALE: 0.5
+        SCALE_ONE_SIDED: True   # only shrink target, never enlarge
+        BLUR: 0.3
+        FLIP: 0.5
+        COLOR: 0.0      # PCA jitter disabled — IR not RGB
+
+    NEG: 0.4
+    GRAY: 0.5

@@ -1,0 +1,44 @@
+# Model weights
+checkpoints/
+pretrained/
+*.pth
+
+# ONNX models (large — obtain via email)
+onnx/
+
+# Compiled Metis models
+compiled_*/
+
+# Video files
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Calibration images
+cal_images/
+
+# Inference outputs (videos + intermediate)
+inference_output/*.mp4
+inference_output/*.avi
+
+# pysot clone
+pysot/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# Conda/pip env caches
+*.egg

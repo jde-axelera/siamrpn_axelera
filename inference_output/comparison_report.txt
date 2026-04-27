@@ -1,0 +1,47 @@
+
+=== Determinism check: Original ONNX (3 runs) ===
+  RESULT: All 3 runs are bit-identical. Seed=42 fully controls randomness.
+
+=== Determinism check: Split ONNX (3 runs) ===
+  RESULT: All 3 runs are bit-identical. Seed=42 fully controls randomness.
+
+=================================================================
+CROSS-MODEL FRAME-BY-FRAME COMPARISON: Original vs Split ONNX
+=================================================================
+
+Score diff  — mean=0.027345  max=0.809946  std=0.061743
+PSR diff    — mean=0.6847  max=16.7126
+CX diff(px) — mean=2.521  max=122.540
+CY diff(px) — mean=1.959  max=130.567
+First frame score diff > 1e-05: 13
+First frame score diff > 1e-04: 13
+First frame score diff > 1e-03: 13
+First frame score diff > 1e-02: 16
+
+Frames with >10px position divergence: 540
+  First 5:
+    f= 5113  orig=(3,457)  split=(3,447)  Δcx=0.4  Δcy=10.1  score_orig=0.040  score_split=0.005
+    f= 5114  orig=(3,456)  split=(3,445)  Δcx=0.2  Δcy=10.6  score_orig=0.038  score_split=0.005
+    f= 5176  orig=(49,336)  split=(53,348)  Δcx=4.0  Δcy=11.9  score_orig=0.104  score_split=0.006
+    f= 5229  orig=(102,311)  split=(107,300)  Δcx=5.6  Δcy=10.8  score_orig=0.116  score_split=0.018
+    f= 5230  orig=(101,310)  split=(108,300)  Δcx=7.3  Δcy=10.2  score_orig=0.142  score_split=0.017
+
+Score means per 500-frame bucket:
+      bucket      orig     split      diff
+     0- 500     0.9561     0.9584     0.0023
+   500-1000     0.9751     0.9769     0.0018
+  1000-1500     0.9775     0.9757     0.0018
+  1500-2000     0.9460     0.9512     0.0053
+  2000-2500     0.9541     0.9594     0.0053
+  2500-3000     0.9624     0.9620     0.0004
+  3000-3500     0.9757     0.9737     0.0020
+  3500-4000     0.9788     0.9784     0.0004
+  4000-4500     0.9846     0.9852     0.0006
+  4500-5000     0.9928     0.9922     0.0006
+  5000-5500     0.2712     0.1832     0.0880
+  5500-5966     0.1902     0.0838     0.1064
+
+=================================================================
+VERDICT: Models DIVERGE. Max score diff = 0.8099.
+         First significant divergence (>0.01) at frame 16.
+=================================================================

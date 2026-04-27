@@ -1,0 +1,51 @@
+# Makefile for track_split_axelera.cpp
+# Builds on Axelera Metis machine (Ubuntu 22.04, SDK 1.6)
+#
+# IMPORTANT: source the SDK venv before running to set AIPU firmware env vars:
+#   source /home/ubuntu/1.6/voyager-sdk/venv/bin/activate
+#
+# xcorr_head needs IR version ≤ 9 for ORT 1.17.1.  Generate once:
+#   python3 -c "import onnx; m=onnx.load('onnx/xcorr_head.onnx'); m.ir_version=8; onnx.save(m,'onnx/xcorr_head_ir8.onnx')"
+#
+# Usage:
+#   make -f Makefile_axelera
+#   source /home/ubuntu/1.6/voyager-sdk/venv/bin/activate
+#   ./track_split_axelera_cpp \
+#     --template_encoder /home/ubuntu/1.6/voyager-sdk/customers/arquimea/compiled_template_v2/compiled_model/model.json \
+#     --search_encoder   /home/ubuntu/1.6/voyager-sdk/customers/arquimea/compiled_search_v2/compiled_model/model.json \
+#     --xcorr_head       /home/ubuntu/final_trained/onnx/xcorr_head_ir8.onnx \
+#     --video            /home/ubuntu/Arquimea/ir_crop.mp4 \
+#     --output           /home/ubuntu/final_trained/inference_output/ir_axelera_cpp.mp4 \
+#     --init_bbox        348,147,38,84
+
+SDK     = /home/ubuntu/1.6/voyager-sdk
+
+AXR_INC = $(SDK)/venv/lib/python3.10/site-packages/axelera/include
+AXR_LIB     = $(SDK)/venv/lib/python3.10/site-packages/axelera/lib
+AXR_RTLIBS  = $(SDK)/venv/lib/python3.10/site-packages/axelera_runtime.libs
+AXR_SO      = $(AXR_LIB)/libaxruntime.so
+
+ORT_INC = $(SDK)/operators/onnxruntime/onnxruntime-linux-x64-1.17.1/include
+ORT_LIB = $(SDK)/operators/lib
+ORT_SO  = $(ORT_LIB)/libonnxruntime.so
+
+CV_FLAGS = $(shell pkg-config --cflags opencv4)
+CV_LIBS  = $(shell pkg-config --libs opencv4)
+
+CXXFLAGS = -O3 -std=c++17 \
+           -I$(AXR_INC) \
+           -I$(ORT_INC) \
+           $(CV_FLAGS)
+
+LDFLAGS  = $(CV_LIBS) \
+           -L$(AXR_LIB) -laxruntime \
+           -L$(ORT_LIB) -lonnxruntime \
+           -Wl,-rpath,$(AXR_LIB) \
+           -Wl,-rpath,$(AXR_RTLIBS) \
+           -Wl,-rpath,$(ORT_LIB)
+
+track_split_axelera_cpp: track_split_axelera.cpp
+	g++ $(CXXFLAGS) -o track_split_axelera_cpp track_split_axelera.cpp $(LDFLAGS)
+
+clean:
+	rm -f track_split_axelera_cpp

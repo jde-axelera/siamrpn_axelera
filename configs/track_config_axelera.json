@@ -1,0 +1,25 @@
+{
+  "paths": {
+    "pysot_root":          "/path/to/final_trained/pysot",
+    "model_cfg":           "/path/to/final_trained/configs/config_ir_siamese_infer.yaml",
+    "checkpoint":          "/path/to/final_trained/checkpoints/best_model.pth",
+    "template_encoder_ax": "<SDK_ROOT>/customers/arquimea/compiled_template_v2/compiled_model/model.json",
+    "search_encoder_ax":   "<SDK_ROOT>/customers/arquimea/compiled_search_v2/compiled_model/model.json",
+    "xcorr_head":          "/path/to/final_trained/onnx/xcorr_head_ir8.onnx",
+    "video":               "/path/to/input.mp4",
+    "output":              "/path/to/output.mp4"
+  },
+  "init_bbox": [348, 147, 38, 84],
+  "max_frames": null,
+  "use_particle_filter": true,
+  "particle_filter": {
+    "n_particles":  500,
+    "sigma_pos":    4.0,
+    "sigma_vel":    1.5,
+    "sigma_scale":  0.02,
+    "max_vel":      25.0,
+    "tau":          0.15,
+    "roughen_std":  0.5
+  },
+  "template_update": {"freq": 30, "alpha": 0.25, "min_psr": 6.0}
+}

@@ -1,0 +1,58 @@
+Training Data Manifest
+======================
+Server: ubuntu@63.179.56.99
+Base path: /home/ubuntu/data/siamrpn_training/data/
+Total size: ~247 GB (kept on server — too large to store locally)
+
+Datasets
+--------
+
+anti_uav410/                    19 GB   USED (weight 3.0 — primary IR SOT)
+  train/                          image sequences
+  train_pysot.json                pysot annotation (208,832 bboxes)
+  val/                            image sequences
+  val_pysot.json                  pysot annotation
+
+dut_vtuav/                     222 GB   USED (weight 2.5)
+  train/                          image sequences
+  train_pysot.json                pysot annotation (52,640 bboxes)
+  test/                           image sequences
+  test_pysot.json                 pysot annotation
+
+dut_anti_uav/                  3.6 GB   USED (weight 2.0 — via analyze_anchors only)
+  images/
+  train_pysot.json                pysot annotation (22,218 bboxes)
+
+massmind/                      447 MB   USED (weight 1.0)
+  images/
+  train_pysot.json                pysot annotation (3,602 bboxes)
+
+msrs/                          1.9 GB   USED (weight 1.0, commented out in final config)
+  train/
+  train_pysot.json                pysot annotation (1,040 bboxes)
+  test/
+  test_pysot.json
+
+hit_uav/                       207 MB   CONFIG REGISTERED — no pysot anno on server
+  images/
+
+anti_uav300/                     4 KB   CONFIG REGISTERED — empty on server
+birdsai/                         4 KB   CONFIG REGISTERED — empty on server
+mvss/                            4 KB   CONFIG REGISTERED — empty on server
+
+Active datasets during training run (2026-04-23)
+-------------------------------------------------
+  AntiUAV410  (55.5% of samples, weight 3.0)
+  DUT-VTUAV   (44.5% of samples, weight 2.5)
+  All others skipped — pysot annotations missing on this server instance.
+
+Bbox statistics (from analyze_anchors.py, 288,320 bboxes)
+----------------------------------------------------------
+  mean h/w : 0.882
+  median   : 0.736
+  p5–p95   : 0.341 – 2.345
+  → KMeans-5 anchor ratios used: [0.37, 0.56, 0.79, 1.11, 2.26]
+
+To retrieve data from server
+-----------------------------
+  scp -r -i "<key>" ubuntu@63.179.56.99:/home/ubuntu/data/siamrpn_training/data/<dataset>/ ./data/
