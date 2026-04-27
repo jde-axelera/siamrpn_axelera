@@ -1,0 +1,57 @@
+# Makefile for poc_siamrpn.cpp
+# Builds on Axelera Metis machine (Ubuntu 22.04, Voyager SDK 1.6)
+#
+# Prerequisites:
+#   source /home/ubuntu/1.6/voyager-sdk/venv/bin/activate
+#
+# One-time model prep (on a workstation with PyTorch + pysot):
+#   export PYTHONPATH=/path/to/pysot:$PYTHONPATH
+#   python scripts/export_template_encoder_r50lt.py \
+#       --model_pth model.pth \
+#       --config    pysot/experiments/siamrpn_r50_l234_dwxcorr_lt/config.yaml \
+#       --out       template_encoder_r50lt.onnx
+#   # Fix head ONNX IR version if needed (ORT 1.17.1 requires <= v9):
+#   python3 -c "import onnx; m=onnx.load('siamrpn_head_37.onnx'); m.ir_version=8; onnx.save(m,'siamrpn_head_37_ir8.onnx')"
+#
+# Build:
+#   make -f Makefile_poc
+#
+# Run:
+#   ./poc_siamrpn_cpp \
+#     --search_encoder   build/siamrpn++onnx/siamrpn++onnx/1/model.json \
+#     --template_encoder template_encoder_r50lt.onnx \
+#     --head             siamrpn_head_37_ir8.onnx \
+#     --video            coyote.mp4 \
+#     --output           out_poc.mp4 \
+#     --init_bbox        695,345,20,30 \
+#     --display
+
+SDK     = /home/ubuntu/1.6/voyager-sdk
+
+AXR_INC     = $(SDK)/venv/lib/python3.10/site-packages/axelera/include
+AXR_LIB     = $(SDK)/venv/lib/python3.10/site-packages/axelera/lib
+AXR_RTLIBS  = $(SDK)/venv/lib/python3.10/site-packages/axelera_runtime.libs
+
+ORT_INC = $(SDK)/operators/onnxruntime/onnxruntime-linux-x64-1.17.1/include
+ORT_LIB = $(SDK)/operators/lib
+
+CV_FLAGS = $(shell pkg-config --cflags opencv4)
+CV_LIBS  = $(shell pkg-config --libs opencv4)
+
+CXXFLAGS = -O3 -std=c++17 \
+           -I$(AXR_INC) \
+           -I$(ORT_INC) \
+           $(CV_FLAGS)
+
+LDFLAGS  = $(CV_LIBS) \
+           -L$(AXR_LIB) -laxruntime \
+           -L$(ORT_LIB) -lonnxruntime \
+           -Wl,-rpath,$(AXR_LIB) \
+           -Wl,-rpath,$(AXR_RTLIBS) \
+           -Wl,-rpath,$(ORT_LIB)
+
+poc_siamrpn_cpp: poc_siamrpn.cpp
+	g++ $(CXXFLAGS) -o poc_siamrpn_cpp poc_siamrpn.cpp $(LDFLAGS)
+
+clean:
+	rm -f poc_siamrpn_cpp
