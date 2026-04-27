@@ -8,21 +8,35 @@ SiamRPN++ tracker with ResNet-50 backbone, fine-tuned on IR/thermal drone datase
 
 ## Performance
 
-Measured on a 640×480 @ 25 fps thermal drone sequence (5 966 frames).
+Measured on a 640×480 @ 25 fps thermal drone sequence (5 966 frames).  
+All Metis runs: backbone on Axelera AIPU, xcorr head on ARM CPU.  
+All GPU runs: backbone on CUDA, xcorr head on CPU (dynamic grouped conv cannot run on GPU).
 
-| Implementation | Hardware | fps |
+### Axelera Metis AIPU
+
+| Script | Particle Filter | fps |
 |---|---|---|
-| Python + ONNX Runtime | GPU | 1.6 |
-| C++ + ONNX Runtime | GPU | 44.0 |
-| **C++ + axruntime** | **Metis AIPU** | **26.8** |
+| `track_split_axelera_nopf.py` (Python) | No  | 23.9 |
+| `track_split_axelera.py` (Python)      | Yes | 19.3 |
+| `track_split_axelera_cpp` (C++)        | Yes | **26.8** |
 
-### Per-stage breakdown — C++ Axelera
+### Reference
+
+| Script | Hardware | Particle Filter | fps |
+|---|---|---|---|
+| `track_split.py` (Python) | x86 CPU only | Yes | ~0.8 |
+| `track_split.py` (Python) | RTX GPU + CPU | Yes | 1.6 |
+| `track_split_cpp` (C++)   | RTX GPU + CPU | Yes | **44.0** |
+
+> The C++ Metis build (26.8 fps) outperforms the Python GPU build (1.6 fps) despite running on an embedded AIPU — the gap is Python interpreter overhead, not hardware. The C++ GPU build (44 fps) is faster because the GPU backbone is ~3× quicker than the AIPU for this model; the remaining bottleneck in both cases is `xcorr_head` on CPU.
+
+### Per-stage breakdown — C++ Metis
 
 | Stage | ms/frame | % |
 |---|---|---|
 | Preprocessing | 0.3 | 0.8% |
-| search\_encoder (Metis) | 15.3 | 41.0% |
-| xcorr\_head (CPU) | 21.7 | **58.0%** ← bottleneck |
+| search\_encoder (Metis AIPU) | 15.3 | 41.0% |
+| xcorr\_head (ARM CPU) | 21.7 | **58.0%** ← bottleneck |
 | Particle filter | 0.1 | 0.2% |
 
 ---
