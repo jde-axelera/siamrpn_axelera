@@ -82,9 +82,16 @@ struct Config {
     int  bbox_x = 0, bbox_y = 0, bbox_w = 0, bbox_h = 0;
     int  max_frames = -1;
 
-    bool  use_pf  = true;
-    int   pf_n    = 200;
-    float pf_std  = 12.0f;   // motion noise std (pixels) per frame
+    bool  use_pf      = true;
+    int   pf_n        = 200;
+    float pf_std      = 5.0f;   // per-frame position jitter (pixels)
+    float pf_vel_std  = 4.0f;   // per-frame velocity change (pixels/frame)
+
+    // Template update: refresh zf every N high-confidence frames (0 = disabled).
+    int   tmpl_update_interval = 20;
+
+    // Grow lost_instance_size by this many pixels each LT frame (0 = disabled).
+    int   lt_window_growth = 32;
 };
 
 // ─── Tensor ──────────────────────────────────────────────────────────────────
@@ -453,19 +460,29 @@ Best select_best(const std::vector<float>& scores, const std::vector<BBox>& bbox
 // Predict: add Gaussian motion noise. Update: weight by max score at each
 // particle's cell in the score grid. Estimate: weighted mean → new center.
 struct PF {
-    std::vector<float> px, py, w;
+    // State: position + velocity per particle.
+    std::vector<float> px, py, vx, vy, w;
     int n = 0;
 
     void init(float cx, float cy, int n_, float spread, std::mt19937& rng) {
         n = n_;
-        px.resize(n); py.resize(n); w.assign(n, 1.f / n);
+        px.resize(n); py.resize(n);
+        vx.assign(n, 0.f); vy.assign(n, 0.f);
+        w.assign(n, 1.f / n);
         std::normal_distribution<float> d(0.f, spread);
         for (int i = 0; i < n; i++) { px[i] = cx + d(rng); py[i] = cy + d(rng); }
     }
 
-    void predict(float std_px, std::mt19937& rng) {
-        std::normal_distribution<float> d(0.f, std_px);
-        for (int i = 0; i < n; i++) { px[i] += d(rng); py[i] += d(rng); }
+    // Constant-velocity predict with independent noise on position and velocity.
+    // pos_std: per-frame position jitter; vel_std: per-frame velocity change.
+    void predict(float pos_std, float vel_std, std::mt19937& rng) {
+        std::normal_distribution<float> dp(0.f, pos_std);
+        std::normal_distribution<float> dv(0.f, vel_std);
+        for (int i = 0; i < n; i++) {
+            vx[i] += dv(rng); vy[i] += dv(rng);
+            px[i] += vx[i] + dp(rng);
+            py[i] += vy[i] + dp(rng);
+        }
     }
 
     // Build ss×ss max-score grid. scores layout: scores[a*ss*ss + r*ss + c].
@@ -498,7 +515,7 @@ struct PF {
         std::vector<float> cum(n);
         cum[0] = w[0];
         for (int i = 1; i < n; i++) cum[i] = cum[i-1] + w[i];
-        std::vector<float> npx(n), npy(n);
+        std::vector<float> npx(n), npy(n), nvx(n), nvy(n);
         std::uniform_real_distribution<float> u(0.f, 1.f / n);
         float r = u(rng);
         int j = 0;
@@ -506,19 +523,24 @@ struct PF {
             float T = r + (float)i / n;
             while (j < n - 1 && cum[j] < T) j++;
             npx[i] = px[j]; npy[i] = py[j];
+            nvx[i] = vx[j]; nvy[i] = vy[j];
         }
-        px = npx; py = npy;
+        px = npx; py = npy; vx = nvx; vy = nvy;
         std::fill(w.begin(), w.end(), 1.f / n);
     }
 
-    std::pair<float,float> estimate() const {
-        float ex = 0.f, ey = 0.f;
-        for (int i = 0; i < n; i++) { ex += w[i] * px[i]; ey += w[i] * py[i]; }
-        return {ex, ey};
+    // Returns weighted-mean position and velocity.
+    std::tuple<float,float,float,float> estimate() const {
+        float ex = 0.f, ey = 0.f, evx = 0.f, evy = 0.f;
+        for (int i = 0; i < n; i++) {
+            ex += w[i] * px[i]; ey  += w[i] * py[i];
+            evx += w[i] * vx[i]; evy += w[i] * vy[i];
+        }
+        return {ex, ey, evx, evy};
     }
 
     void recenter(float cx, float cy) {
-        for (int i = 0; i < n; i++) { px[i] = cx; py[i] = cy; }
+        for (int i = 0; i < n; i++) { px[i] = cx; py[i] = cy; vx[i] = 0.f; vy[i] = 0.f; }
         std::fill(w.begin(), w.end(), 1.f / n);
     }
 };
@@ -588,9 +610,12 @@ int main(int argc, char* argv[]) {
         else if (a == "--instance_size"       && i+1 < argc) cfg.instance_size      = std::stoi(argv[++i]);
         else if (a == "--lost_instance_size"  && i+1 < argc) cfg.lost_instance_size = std::stoi(argv[++i]);
         else if (a == "--display")                           cfg.display            = true;
-        else if (a == "--no_pf")                             cfg.use_pf             = false;
-        else if (a == "--pf_n"                && i+1 < argc) cfg.pf_n              = std::stoi(argv[++i]);
-        else if (a == "--pf_std"              && i+1 < argc) cfg.pf_std            = std::stof(argv[++i]);
+        else if (a == "--no_pf")                             cfg.use_pf                  = false;
+        else if (a == "--pf_n"                && i+1 < argc) cfg.pf_n                  = std::stoi(argv[++i]);
+        else if (a == "--pf_std"              && i+1 < argc) cfg.pf_std                = std::stof(argv[++i]);
+        else if (a == "--pf_vel_std"          && i+1 < argc) cfg.pf_vel_std            = std::stof(argv[++i]);
+        else if (a == "--tmpl_update"         && i+1 < argc) cfg.tmpl_update_interval  = std::stoi(argv[++i]);
+        else if (a == "--lt_window_growth"    && i+1 < argc) cfg.lt_window_growth      = std::stoi(argv[++i]);
         else if (a == "--init_bbox"           && i+1 < argc)
             sscanf(argv[++i], "%d,%d,%d,%d",
                    &cfg.bbox_x, &cfg.bbox_y, &cfg.bbox_w, &cfg.bbox_h);
@@ -702,6 +727,9 @@ int main(int argc, char* argv[]) {
     bool longterm = false;
     PF pf;
     std::mt19937 pf_rng(42);
+    int  tmpl_high_conf_streak = 0;   // consecutive high-confidence frames
+    int  lt_frames = 0;               // frames spent in LT mode (for window growth)
+    int  dynamic_lost_size;           // grows during LT mode
 
     auto now_ms = []() {
         return duration_cast<microseconds>(
@@ -755,6 +783,7 @@ int main(int argc, char* argv[]) {
             if (cfg.display) { cv::imshow("poc_siamrpn++ [Q/ESC=quit]", frame); cv::waitKey(1); }
             if (cfg.use_pf)
                 pf.init((float)cx, (float)cy, cfg.pf_n, 5.0f, pf_rng);
+            dynamic_lost_size = cfg.effective_lost_size();
             inited = true; fi++; continue;
         }
 
@@ -798,15 +827,21 @@ int main(int argc, char* argv[]) {
 
             if (cfg.use_pf) {
                 auto grid = PF::build_grid(scores, AN, ss);
-                pf.predict(cfg.pf_std, pf_rng);
+                pf.predict(cfg.pf_std, cfg.pf_vel_std, pf_rng);
                 pf.update(grid, (float)cx, (float)cy, scale_z, cfg.anchor_stride, ss);
                 pf.resample(pf_rng);
             }
 
         } else {
             // ── LT mode: 2×2 tiled search ─────────────────────────────────
+            // Grow search window each LT frame to expand re-detection range.
+            lt_frames++;
+            if (cfg.lt_window_growth > 0)
+                dynamic_lost_size = cfg.effective_lost_size()
+                                    + lt_frames * cfg.lt_window_growth;
+
             float s_x = sz * ((float)cfg.instance_size / cfg.exemplar_size);
-            s_x = std::max(s_x, std::max((float)cfg.effective_lost_size(),
+            s_x = std::max(s_x, std::max((float)dynamic_lost_size,
                            (float)(cfg.instance_size * cfg.num_tiles) * 0.75f));
             int full_sz = (int)std::round(s_x);
             scale_z_use = 1.0f;
@@ -901,7 +936,7 @@ int main(int argc, char* argv[]) {
         float best_score = best.score;
         if (best_score >= cfg.conf_low) {
             if (!longterm && cfg.use_pf) {
-                auto [pcx, pcy] = pf.estimate();
+                auto [pcx, pcy, pvx, pvy] = pf.estimate();
                 cx = pcx;
                 cy = pcy;
             } else {
@@ -926,9 +961,39 @@ int main(int argc, char* argv[]) {
             bool was_lt = longterm;
             if (best_score < cfg.conf_low)       longterm = true;
             else if (best_score > cfg.conf_high) longterm = false;
-            // Re-centre PF when returning from LT so particles track from new position.
-            if (was_lt && !longterm && cfg.use_pf)
-                pf.recenter((float)cx, (float)cy);
+            if (was_lt && !longterm) {
+                // Returned from LT: reset window growth and re-centre PF.
+                lt_frames = 0;
+                dynamic_lost_size = cfg.effective_lost_size();
+                if (cfg.use_pf) pf.recenter((float)cx, (float)cy);
+            }
+        }
+
+        // ── Template update (high-confidence streak) ───────────────────────
+        if (!longterm && cfg.tmpl_update_interval > 0) {
+            if (best_score > cfg.conf_high) {
+                tmpl_high_conf_streak++;
+                if (tmpl_high_conf_streak >= cfg.tmpl_update_interval) {
+                    tmpl_high_conf_streak = 0;
+                    float wz = tw + cfg.context_amount * (tw + th);
+                    float hz = th + cfg.context_amount * (tw + th);
+                    float sz_t = std::sqrt(wz * hz);
+                    auto tcrop = get_subwindow(frame, cx, cy,
+                                              cfg.exemplar_size, std::round(sz_t), avg_chans);
+                    auto tt = to_nchw(tcrop);
+                    std::vector<int64_t> tshape = {1, 3, cfg.exemplar_size, cfg.exemplar_size};
+                    std::vector<Ort::Value> tin;
+                    tin.push_back(Ort::Value::CreateTensor<float>(
+                        mem, tt.data(), tt.size(), tshape.data(), tshape.size()));
+                    auto tout = tmpl_sess.Run(Ort::RunOptions{nullptr},
+                                             tmpl_in_c.data(), tin.data(), 1,
+                                             tmpl_out_c.data(), tmpl_out_c.size());
+                    zf.clear();
+                    for (auto& v : tout) zf.push_back(ort_to_tensor(v));
+                }
+            } else {
+                tmpl_high_conf_streak = 0;
+            }
         }
 
         // ── Visualization ──────────────────────────────────────────────────
