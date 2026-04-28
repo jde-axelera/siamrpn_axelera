@@ -302,21 +302,23 @@ Template features are center-cropped from the compiled model output `(1,256,15,1
 └── env.yml                         conda environment spec
 ```
 
-**Not in repo — download from [Google Drive](https://drive.google.com/drive/folders/1yt2IpE78SLc4MJjnIyn7J-VNmP0J6sQ2?usp=sharing):**
+**Not in repo — download from Google Drive:**
 
-| Drive folder | File | Description |
-|---|---|---|
-| `ir_checkpoint/` | `best_model.pth` | IR fine-tuned checkpoint (epoch 444) |
-| `ir_onnx/` | `template_encoder.onnx` | Exported template encoder |
-| `ir_onnx/` | `search_encoder.onnx` | Exported search encoder |
-| `ir_onnx/` | `xcorr_head.onnx` | Exported xcorr head |
-| `ir_onnx/` | `xcorr_head_ir8.onnx` | IR v8 copy (required for C++ build) |
-| `ir_Metis/` | compiled models | `compiled_template/`, `compiled_search/` |
-| `LT_checkpoint/` | `lt.pth` | LT model pretrained weights |
-| `LT_onnx/` | `template_encoder_r50lt.onnx` | LT template encoder (CPU) |
-| `LT_onnx/` | `search_encoder_r50lt.onnx` | LT search encoder (for axcompile) |
-| `LT_onnx/` | `siamrpn_head_dyn.onnx` | LT head with dynamic spatial dims |
-| `LT_Metis/` | compiled search encoder | Compiled 255px search encoder for Metis |
+| Drive | Folder | File | Description |
+|---|---|---|---|
+| [Models](https://drive.google.com/drive/folders/1yt2IpE78SLc4MJjnIyn7J-VNmP0J6sQ2?usp=sharing) | `ir_checkpoint/` | `best_model.pth` | IR fine-tuned checkpoint (epoch 444) |
+| [Models](https://drive.google.com/drive/folders/1yt2IpE78SLc4MJjnIyn7J-VNmP0J6sQ2?usp=sharing) | `ir_onnx/` | `template_encoder.onnx` | Exported template encoder |
+| [Models](https://drive.google.com/drive/folders/1yt2IpE78SLc4MJjnIyn7J-VNmP0J6sQ2?usp=sharing) | `ir_onnx/` | `search_encoder.onnx` | Exported search encoder |
+| [Models](https://drive.google.com/drive/folders/1yt2IpE78SLc4MJjnIyn7J-VNmP0J6sQ2?usp=sharing) | `ir_onnx/` | `xcorr_head.onnx` | Exported xcorr head |
+| [Models](https://drive.google.com/drive/folders/1yt2IpE78SLc4MJjnIyn7J-VNmP0J6sQ2?usp=sharing) | `ir_onnx/` | `xcorr_head_ir8.onnx` | IR v8 copy (required for C++ build) |
+| [Models](https://drive.google.com/drive/folders/1yt2IpE78SLc4MJjnIyn7J-VNmP0J6sQ2?usp=sharing) | `ir_Metis/` | compiled models | `compiled_template/`, `compiled_search/` |
+| [Models](https://drive.google.com/drive/folders/1yt2IpE78SLc4MJjnIyn7J-VNmP0J6sQ2?usp=sharing) | `LT_checkpoint/` | `lt.pth` | LT model pretrained weights |
+| [Models](https://drive.google.com/drive/folders/1yt2IpE78SLc4MJjnIyn7J-VNmP0J6sQ2?usp=sharing) | `LT_onnx/` | `template_encoder_r50lt.onnx` | LT template encoder (CPU) |
+| [Models](https://drive.google.com/drive/folders/1yt2IpE78SLc4MJjnIyn7J-VNmP0J6sQ2?usp=sharing) | `LT_onnx/` | `search_encoder_r50lt.onnx` | LT search encoder (for axcompile) |
+| [Models](https://drive.google.com/drive/folders/1yt2IpE78SLc4MJjnIyn7J-VNmP0J6sQ2?usp=sharing) | `LT_onnx/` | `siamrpn_head_dyn.onnx` | LT head with dynamic spatial dims |
+| [Models](https://drive.google.com/drive/folders/1yt2IpE78SLc4MJjnIyn7J-VNmP0J6sQ2?usp=sharing) | `LT_Metis/` | compiled search encoder | Compiled 255px search encoder for Metis |
+| [Test videos](https://drive.google.com/drive/folders/1u9LNrtFh-FO3QFWKxQjHW6aSuus8aBZk?usp=sharing) | — | `ir_crop.mp4` | IR thermal drone sequence (110 MB) |
+| [Test videos](https://drive.google.com/drive/folders/1u9LNrtFh-FO3QFWKxQjHW6aSuus8aBZk?usp=sharing) | — | `coyote_OrinMuggleSam.mp4` | RGB coyote sequence (76 MB) |
 
 ---
 
