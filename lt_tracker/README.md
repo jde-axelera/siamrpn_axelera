@@ -40,7 +40,7 @@ Time breakdown (255px, per frame):
 
 ## One-time Model Preparation
 
-These steps run on a workstation with PyTorch + pysot installed, not on Metis.
+Steps 1–3 run on a workstation with PyTorch + pysot installed. Step 4 runs on Metis.
 
 ### 1. Export template encoder
 
@@ -52,27 +52,29 @@ python scripts/export_template_encoder_r50lt.py \
     --out template_encoder_r50lt.onnx
 ```
 
-This produces 6 outputs `k0`–`k5` with shapes `[1,128,5,5]×2`, `[1,256,5,5]×2`, `[1,512,5,5]×2`.
+Produces 6 kernel outputs `k0`–`k5`: `[1,128,5,5]×2`, `[1,256,5,5]×2`, `[1,512,5,5]×2`. IR version auto-downgraded to 8.
 
-### 2. Fix head ONNX IR version (ORT 1.17.1 requires ≤ v9)
+### 2. Export search encoder
+
+```bash
+python scripts/export_search_encoder_r50lt.py \
+    --model_pth lt.pth \
+    --config pysot/experiments/siamrpn_r50_l234_dwxcorr_lt/config.yaml \
+    --out search_encoder_r50lt.onnx \
+    --size 255
+```
+
+Produces 3 feature outputs `xf0`–`xf2` (backbone + neck). Use `--size 351` for the legacy 351px encoder.
+
+### 3. Make dynamic head (accepts both 25×25 and 37×37 score maps)
+
+Starting from `siamrpn_head_37.onnx`:
 
 ```bash
 python3 -c "
 import onnx
 m = onnx.load('siamrpn_head_37.onnx')
 m.ir_version = 8
-onnx.save(m, 'siamrpn_head_37_ir8.onnx')
-"
-```
-
-### 3. Make dynamic head (accepts both 25×25 and 37×37 score maps)
-
-Run on Metis (or any machine with `onnx` installed):
-
-```bash
-python3 -c "
-import onnx
-m = onnx.load('siamrpn_head_37.onnx')
 for t in list(m.graph.input) + list(m.graph.output):
     s = t.type.tensor_type.shape
     for d in [s.dim[2], s.dim[3]]:
@@ -83,27 +85,29 @@ onnx.save(m, 'siamrpn_head_dyn.onnx')
 "
 ```
 
-### 4. Compile search encoders (on Metis with SDK active)
+### 4. Compile search encoder on Metis (with SDK active)
+
+Copy `search_encoder_r50lt.onnx` to Metis, then:
 
 ```bash
 source /home/ubuntu/1.6/voyager-sdk/venv/bin/activate
 
-# 255×255 encoder (~17ms, recommended)
-axcompile -i onnx_files/search_encoder.onnx \
+# 255×255 encoder (~18.5ms, recommended)
+axcompile -i onnx_files/search_encoder_r50lt.onnx \
     --input-shape 1,3,255,255 \
     -o compiled_search_255 --overwrite \
     --imageset cal_images --dataset-len 400 \
     --transform transform_search.py
 
 # 351×351 encoder (~37ms, legacy)
-axcompile -i onnx_files/search_encoder.onnx \
+axcompile -i onnx_files/search_encoder_r50lt.onnx \
     --input-shape 1,3,351,351 \
     -o compiled_search_351 --overwrite \
     --imageset cal_images --dataset-len 400 \
     --transform transform_search.py
 ```
 
-See `customers/arquimea/` for `transform_search.py` and calibration images.
+`transform_search.py` and calibration images are in `customers/arquimea/` on Metis.
 
 ---
 
@@ -204,6 +208,13 @@ cd /home/ubuntu/siamrpn_poc
 | `--init_bbox x,y,w,h` | *(none)* | Initial bounding box; omit for interactive selection |
 | `--instance_size N` | `255` | Search crop size. Use `255` with `siamrpn++onnx_255`, `351` with `siamrpn++onnx` |
 | `--lost_instance_size N` | `2×instance_size` | LT mode search window size. Default: 510 for 255px, 702 for 351px |
+| `--conf_low F` | `0.8` | Score threshold to enter LT mode |
+| `--conf_high F` | `0.985` | Score threshold to exit LT mode |
+| `--no_pf` | off | Disable particle filter (normal mode) |
+| `--pf_n N` | `200` | Number of particle filter particles |
+| `--pf_std F` | `12.0` | PF motion noise std (pixels/frame) |
+| `--lt_stuck_timeout N` | `30` | Frames stuck in LT before global scan (0 = disable) |
+| `--lt_stuck_thresh F` | `0.3` | Score threshold for "stuck in LT" detection |
 | `--aipu_cores N` | `4` | AIPU cores for the normal-mode encoder |
 | `--max_frames N` | `-1` (all) | Stop after N frames |
 | `--display` | off | Show live tracking window |
@@ -245,12 +256,6 @@ The Metis chip has 4 sub-devices. Allocation:
 - 3 connections × 1 core → LT tile workers (worker 0 handles tiles {0,3} sequentially; workers 1 and 2 handle tiles {1} and {2} in parallel)
 
 Total: 4 connections = 4 sub-devices. No headroom beyond this.
-
-### Neck center-crop (template encoder only)
-
-The Axelera compiled template encoder outputs `(1,256,15,15)` NHWC (backbone+neck without AdjustLayer).
-The original ONNX output is `(1,256,7,7)` which includes a center crop (`l = (15-7)//2 = 4`, crop `[:,:,4:11,4:11]`).
-This crop is applied in the C++ dequantize path — the `(1,256,7,7)` output feeds directly into xcorr.
 
 ### dw-xcorr implementation
 
