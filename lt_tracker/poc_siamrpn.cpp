@@ -85,6 +85,11 @@ struct Config {
     bool  use_pf  = true;
     int   pf_n    = 200;
     float pf_std  = 12.0f;   // motion noise std (pixels) per frame
+
+    // Global scan: when stuck in LT mode for this many frames below stuck_thresh,
+    // search all 4 frame quadrants and jump to the best one (0 = disabled).
+    int   lt_stuck_timeout   = 30;
+    float lt_stuck_threshold = 0.3f;
 };
 
 // ─── Tensor ──────────────────────────────────────────────────────────────────
@@ -591,6 +596,8 @@ int main(int argc, char* argv[]) {
         else if (a == "--no_pf")                             cfg.use_pf             = false;
         else if (a == "--pf_n"                && i+1 < argc) cfg.pf_n              = std::stoi(argv[++i]);
         else if (a == "--pf_std"              && i+1 < argc) cfg.pf_std            = std::stof(argv[++i]);
+        else if (a == "--lt_stuck_timeout"    && i+1 < argc) cfg.lt_stuck_timeout  = std::stoi(argv[++i]);
+        else if (a == "--lt_stuck_thresh"     && i+1 < argc) cfg.lt_stuck_threshold= std::stof(argv[++i]);
         else if (a == "--init_bbox"           && i+1 < argc)
             sscanf(argv[++i], "%d,%d,%d,%d",
                    &cfg.bbox_x, &cfg.bbox_y, &cfg.bbox_w, &cfg.bbox_h);
@@ -702,6 +709,7 @@ int main(int argc, char* argv[]) {
     bool longterm = false;
     PF pf;
     std::mt19937 pf_rng(42);
+    int lt_stuck_frames = 0;
 
     auto now_ms = []() {
         return duration_cast<microseconds>(
@@ -926,9 +934,50 @@ int main(int argc, char* argv[]) {
             bool was_lt = longterm;
             if (best_score < cfg.conf_low)       longterm = true;
             else if (best_score > cfg.conf_high) longterm = false;
-            // Re-centre PF when returning from LT so particles track from new position.
-            if (was_lt && !longterm && cfg.use_pf)
-                pf.recenter((float)cx, (float)cy);
+            if (was_lt && !longterm) {
+                lt_stuck_frames = 0;
+                if (cfg.use_pf) pf.recenter((float)cx, (float)cy);
+            }
+        }
+
+        // ── Global scan: if stuck in LT, search all 4 frame quadrants ──────
+        if (longterm && cfg.lt_stuck_timeout > 0) {
+            if (best_score < cfg.lt_stuck_threshold) lt_stuck_frames++;
+            else                                     lt_stuck_frames = 0;
+
+            if (lt_stuck_frames == cfg.lt_stuck_timeout) {
+                lt_stuck_frames = 0;
+                float s_x_gs = sz * ((float)cfg.instance_size / cfg.exemplar_size);
+                // 3×2 grid within the central 70% of the frame ([15%,85%] each axis).
+                float x0 = 0.15f * VW, x1 = 0.85f * VW;
+                float y0 = 0.15f * VH, y1 = 0.85f * VH;
+                std::vector<std::pair<double,double>> scan_centers;
+                for (int iy = 0; iy < 2; iy++)
+                    for (int ix = 0; ix < 3; ix++)
+                        scan_centers.push_back({
+                            x0 + (x1-x0) * (ix + 0.5) / 3.0,
+                            y0 + (y1-y0) * (iy + 0.5) / 2.0 });
+                float best_gs = -1.f;
+                double best_gcx = cx, best_gcy = cy;
+                for (auto [gcx, gcy] : scan_centers) {
+                    auto gc = get_subwindow(frame, gcx, gcy,
+                                           cfg.instance_size, std::round(s_x_gs), avg_chans);
+                    auto [xf_gs, _] = srch_enc.run(to_nchw(gc), 3,
+                                                   cfg.instance_size, cfg.instance_size);
+                    auto [sc_gs, _2] = run_xcorr_head(
+                        xf_gs, zf, anchors, AN, ss,
+                        0.f, 0.f, (float)cfg.instance_size, (float)cfg.instance_size,
+                        head_sess, head_in_c, head_out_c, mem);
+                    float qs = *std::max_element(sc_gs.begin(), sc_gs.end());
+                    if (qs > best_gs) { best_gs = qs; best_gcx = gcx; best_gcy = gcy; }
+                }
+                fprintf(stderr, "f=%5d  Global scan → quadrant (%.0f,%.0f) score=%.3f\n",
+                        fi, best_gcx, best_gcy, best_gs);
+                if (best_gs > cfg.lt_stuck_threshold) {
+                    cx = best_gcx; cy = best_gcy;
+                    if (cfg.use_pf) pf.recenter((float)cx, (float)cy);
+                }
+            }
         }
 
         // ── Visualization ──────────────────────────────────────────────────
