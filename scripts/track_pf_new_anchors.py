@@ -39,7 +39,7 @@ import numpy as np
 import cv2
 import torch
 
-SCRIPT_DIR = '/home/ubuntu/data/siamrpn_training'
+SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(SCRIPT_DIR, 'pysot'))
 
 import onnxruntime as ort
@@ -49,12 +49,12 @@ from pysot.tracker.tracker_builder import build_tracker
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 CFG_PATH  = f'{SCRIPT_DIR}/configs/config_ir_siamese.yaml'
-CKPT_PATH = f'{SCRIPT_DIR}/pysot/snapshot/all_datasets_ir_siamese/best_model.pth'
-ENC_PATH  = f'{SCRIPT_DIR}/exported_new_anchors/template_encoder.onnx'
-TRK_PATH  = f'{SCRIPT_DIR}/exported_new_anchors/tracker.onnx'
-VIDEO     = f'{SCRIPT_DIR}/ir_crop.mp4'
-SAM2_VID  = f'{SCRIPT_DIR}/ir_crop_sam_seg.mp4'
-OUT_PATH  = f'{SCRIPT_DIR}/ir_new_anchors_track.mp4'
+CKPT_PATH = f'{SCRIPT_DIR}/checkpoints/best_model.pth'
+ENC_PATH  = f'{SCRIPT_DIR}/onnx/template_encoder.onnx'
+TRK_PATH  = f'{SCRIPT_DIR}/onnx/tracker.onnx'
+VIDEO     = '/path/to/input.mp4'
+SAM2_VID  = '/path/to/sam2_seg.mp4'
+OUT_PATH  = f'{SCRIPT_DIR}/inference_output/track_new_anchors.mp4'
 INIT_BBOX = [348, 147, 38, 84]           # [x, y, w, h] — frame-0 ground truth
 
 MEAN = np.array([0.485, 0.456, 0.406], np.float32)

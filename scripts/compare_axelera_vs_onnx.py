@@ -267,8 +267,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--config',          default='configs/track_config_axelera.json')
     ap.add_argument('--max-frames',      type=int, default=200)
-    ap.add_argument('--template-onnx',   default='/home/ubuntu/final_trained/onnx/template_encoder.onnx')
-    ap.add_argument('--search-onnx',     default='/home/ubuntu/final_trained/onnx/search_encoder.onnx')
+    ap.add_argument('--template-onnx',   default='onnx/template_encoder.onnx')
+    ap.add_argument('--search-onnx',     default='onnx/search_encoder.onnx')
     ap.add_argument('--csv-out',         default='inference_output/compare_axelera_vs_onnx.csv')
     args = ap.parse_args()
 

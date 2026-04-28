@@ -219,7 +219,7 @@ This sets the firmware environment variables (`AIPU_FIRMWARE_OMEGA`, `AIPU_RUNTI
 ### 2. Build
 
 ```bash
-# Edit SDK path in Makefile_axelera if your SDK is not at /home/ubuntu/1.6/voyager-sdk
+# Edit SDK path in Makefile_axelera to point to your Voyager SDK root
 make -f Makefile_axelera
 ```
 
@@ -313,7 +313,7 @@ Template features are center-cropped from the compiled model output `(1,256,15,1
 | `onnx/xcorr_head.onnx` | Exported xcorr head |
 | `onnx/xcorr_head_ir8.onnx` | IR v8 copy (required for C++ build) |
 | Compiled Metis models | `compiled_template_v2/`, `compiled_search_v2/` |
-| Test videos | `ir_crop.mp4`, `coyote.mp4`, and other Arquimea sequences |
+| Test videos | `ir_crop.mp4`, `coyote.mp4`, and other test sequences |
 
 Contact: **jaydeep.de@axelera.ai**
 

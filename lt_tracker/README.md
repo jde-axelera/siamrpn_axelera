@@ -3,8 +3,7 @@
 Real-time object tracking using SiamRPN++ (ResNet-50 LT backbone) with the search encoder
 running on the Axelera Metis AIPU and xcorr/head running on the host CPU.
 
-**Target machine:** `ubuntu@100.111.58.120` (password: `ubuntu`)  
-**SDK:** `/home/ubuntu/1.6/voyager-sdk/` — always `source venv/bin/activate` first
+**SDK:** `<SDK_ROOT>` (e.g. `/opt/voyager-sdk`) — always `source <SDK_ROOT>/venv/bin/activate` first
 
 ---
 
@@ -23,7 +22,7 @@ Time breakdown (255px, per frame):
 
 ---
 
-## Files on Metis (`/home/ubuntu/siamrpn_poc/`)
+## Files on Metis (`<WORK_DIR>/`)
 
 | File | Description |
 |---|---|
@@ -90,7 +89,7 @@ onnx.save(m, 'siamrpn_head_dyn.onnx')
 Copy `search_encoder_r50lt.onnx` to Metis, then:
 
 ```bash
-source /home/ubuntu/1.6/voyager-sdk/venv/bin/activate
+source <SDK_ROOT>/venv/bin/activate
 
 # 255×255 encoder (~18.5ms, recommended)
 axcompile -i onnx_files/search_encoder_r50lt.onnx \
@@ -107,7 +106,7 @@ axcompile -i onnx_files/search_encoder_r50lt.onnx \
     --transform transform_search.py
 ```
 
-`transform_search.py` and calibration images are in `customers/arquimea/` on Metis.
+`transform_search.py` and calibration images should be placed in the Metis SDK `customers/` directory.
 
 ---
 
@@ -116,9 +115,9 @@ axcompile -i onnx_files/search_encoder_r50lt.onnx \
 On Metis:
 
 ```bash
-ssh ubuntu@100.111.58.120  # password: ubuntu
-source /home/ubuntu/1.6/voyager-sdk/venv/bin/activate
-cd /home/ubuntu/siamrpn_poc
+ssh <user>@<METIS_IP>
+source <SDK_ROOT>/venv/bin/activate
+cd <WORK_DIR>
 make -f Makefile_poc
 ```
 
@@ -126,7 +125,7 @@ make -f Makefile_poc
 
 | Variable | Default | Description |
 |---|---|---|
-| `SDK` | `/home/ubuntu/1.6/voyager-sdk` | Voyager SDK root |
+| `SDK` | `<SDK_ROOT>` | Voyager SDK root |
 | `AXR_INC` | `$(SDK)/venv/.../axelera/include` | Axelera runtime headers |
 | `AXR_LIB` | `$(SDK)/venv/.../axelera/lib` | Axelera runtime library |
 | `ORT_INC` | `$(SDK)/operators/onnxruntime-.../include` | ONNXRuntime headers |
@@ -147,8 +146,8 @@ make -f Makefile_poc clean && make -f Makefile_poc
 Always activate the SDK environment first:
 
 ```bash
-source /home/ubuntu/1.6/voyager-sdk/venv/bin/activate
-cd /home/ubuntu/siamrpn_poc
+source <SDK_ROOT>/venv/bin/activate
+cd <WORK_DIR>
 ```
 
 ### Default (255px encoder, 25.7 fps)
@@ -158,7 +157,7 @@ cd /home/ubuntu/siamrpn_poc
     --search_encoder   build/siamrpn++onnx_255/siamrpn++onnx_255/1/model.json \
     --template_encoder template_encoder_r50lt.onnx \
     --head             siamrpn_head_dyn.onnx \
-    --video            /home/ubuntu/Arquimea/wetransfer_test-videos-for-tracking_2025-11-11_0750/coyote.mp4 \
+    --video            /path/to/video.mp4 \
     --output           out_255.mp4 \
     --init_bbox        695,345,20,30
 ```
@@ -271,7 +270,7 @@ would require, keeping all working data (6.7 KB search + 5.4 KB output per chann
 It runs at ~19 fps with the 351px encoder (37ms Metis + 16ms xcorr_head on CPU).
 
 ```bash
-source /home/ubuntu/1.6/voyager-sdk/venv/bin/activate
+source <SDK_ROOT>/venv/bin/activate
 python poc_siamrpn.py
 ```
 

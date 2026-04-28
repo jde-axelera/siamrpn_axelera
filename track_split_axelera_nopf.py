@@ -8,8 +8,8 @@ No score map, no search crop, no SAM2 panel.
 Uses the same config file as track_split_axelera.py.
 
 Usage:
-    PYTHONPATH=/home/ubuntu/final_trained/pysot \
-        python scripts/track_split_axelera_nopf.py \
+    PYTHONPATH=/path/to/pysot \
+        python track_split_axelera_nopf.py \
         --config configs/track_config_axelera.json
 
 Output layout (W × 550):

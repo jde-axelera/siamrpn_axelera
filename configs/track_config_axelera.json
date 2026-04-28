@@ -3,8 +3,8 @@
     "pysot_root":          "/path/to/final_trained/pysot",
     "model_cfg":           "/path/to/final_trained/configs/config_ir_siamese_infer.yaml",
     "checkpoint":          "/path/to/final_trained/checkpoints/best_model.pth",
-    "template_encoder_ax": "<SDK_ROOT>/customers/arquimea/compiled_template_v2/compiled_model/model.json",
-    "search_encoder_ax":   "<SDK_ROOT>/customers/arquimea/compiled_search_v2/compiled_model/model.json",
+    "template_encoder_ax": "<SDK_ROOT>/compiled_models/compiled_template_v2/compiled_model/model.json",
+    "search_encoder_ax":   "<SDK_ROOT>/compiled_models/compiled_search_v2/compiled_model/model.json",
     "xcorr_head":          "/path/to/final_trained/onnx/xcorr_head_ir8.onnx",
     "video":               "/path/to/input.mp4",
     "output":              "/path/to/output.mp4"

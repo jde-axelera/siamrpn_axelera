@@ -10,7 +10,7 @@ SiamRPN++ ANCHOR.RATIOS config field.
 
 Usage:
     conda activate siamrpn
-    python analyze_anchors.py --data_root /home/ubuntu/data/siamrpn_training/data
+    python analyze_anchors.py --data_root /path/to/training/data
 
 Results from 2026-04-23 run (288320 bboxes, anti_uav410 + dut_vtuav + dut_anti_uav
 + massmind + msrs):
@@ -83,7 +83,7 @@ def log_kmeans(ratios, n_clusters=5, n_iter=200):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data_root", default="/home/ubuntu/data/siamrpn_training/data")
+    ap.add_argument("--data_root", default="/path/to/training/data")
     ap.add_argument("--n_anchors", type=int, default=5)
     args = ap.parse_args()
 

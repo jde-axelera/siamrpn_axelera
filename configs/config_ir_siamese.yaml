@@ -85,8 +85,8 @@ TRAIN:
     PRINT_FREQ: 50
     LOG_GRADS: false
 
-    LOG_DIR: '/home/ubuntu/data/siamrpn_training/pysot/logs/all_datasets_ir_siamese'
-    SNAPSHOT_DIR: '/home/ubuntu/data/siamrpn_training/pysot/snapshot/all_datasets_ir_siamese'
+    LOG_DIR: '/path/to/training/pysot/logs/all_datasets_ir_siamese'
+    SNAPSHOT_DIR: '/path/to/training/pysot/snapshot/all_datasets_ir_siamese'
     PRETRAINED: ""
     RESUME: ""
 
@@ -99,115 +99,115 @@ DATASET:
 
     # ── Anti-UAV410 ──────────────────────────────────────────────────────────
     ANTIUAV410:
-        ROOT: '/home/ubuntu/data/siamrpn_training/data/anti_uav410/train'
-        ANNO: '/home/ubuntu/data/siamrpn_training/data/anti_uav410/train_pysot.json'
+        ROOT: '/path/to/training/data/anti_uav410/train'
+        ANNO: '/path/to/training/data/anti_uav410/train_pysot.json'
         FRAME_RANGE: 50
         NUM_USE: -1
         WEIGHT: 3.0          # up-weight: primary IR SOT dataset
 
     ANTIUAV410_VAL:
-        ROOT: '/home/ubuntu/data/siamrpn_training/data/anti_uav410/val'
-        ANNO: '/home/ubuntu/data/siamrpn_training/data/anti_uav410/val_pysot.json'
+        ROOT: '/path/to/training/data/anti_uav410/val'
+        ANNO: '/path/to/training/data/anti_uav410/val_pysot.json'
         FRAME_RANGE: 50
         NUM_USE: -1
 
     # # ── MSRS (paired IR/visible) ─────────────────────────────────────────────
     # MSRS:
-    #     ROOT: '/home/ubuntu/data/siamrpn_training/data/msrs/train'
-    #     ANNO: '/home/ubuntu/data/siamrpn_training/data/msrs/train_pysot.json'
+    #     ROOT: '/path/to/training/data/msrs/train'
+    #     ANNO: '/path/to/training/data/msrs/train_pysot.json'
     #     FRAME_RANGE: 1
     #     NUM_USE: -1
     #     WEIGHT: 1.0
 
     # MSRS_VAL:
-    #     ROOT: '/home/ubuntu/data/siamrpn_training/data/msrs/test'
-    #     ANNO: '/home/ubuntu/data/siamrpn_training/data/msrs/test_pysot.json'
+    #     ROOT: '/path/to/training/data/msrs/test'
+    #     ANNO: '/path/to/training/data/msrs/test_pysot.json'
     #     FRAME_RANGE: 1
     #     NUM_USE: -1
 
     # ── VT-MOT / PFTrack ────────────────────────────────────────────────────
     VTMOT:
-        ROOT: '/home/ubuntu/data/siamrpn_training/data/vtmot/train'
-        ANNO: '/home/ubuntu/data/siamrpn_training/data/vtmot/train_pysot.json'
+        ROOT: '/path/to/training/data/vtmot/train'
+        ANNO: '/path/to/training/data/vtmot/train_pysot.json'
         FRAME_RANGE: 30
         NUM_USE: -1
         WEIGHT: 2.0
 
     VTMOT_VAL:
-        ROOT: '/home/ubuntu/data/siamrpn_training/data/vtmot/test'
-        ANNO: '/home/ubuntu/data/siamrpn_training/data/vtmot/test_pysot.json'
+        ROOT: '/path/to/training/data/vtmot/test'
+        ANNO: '/path/to/training/data/vtmot/test_pysot.json'
         FRAME_RANGE: 30
         NUM_USE: -1
 
     # # ── MassMIND (maritime LWIR) ─────────────────────────────────────────────
     # MASSMIND:
-    #     ROOT: '/home/ubuntu/data/siamrpn_training/data/massmind/images'
-    #     ANNO: '/home/ubuntu/data/siamrpn_training/data/massmind/train_pysot.json'
+    #     ROOT: '/path/to/training/data/massmind/images'
+    #     ANNO: '/path/to/training/data/massmind/train_pysot.json'
     #     FRAME_RANGE: 1
     #     NUM_USE: -1
     #     WEIGHT: 1.0
 
     # ── MVSS-Baseline (RGB-thermal video) ────────────────────────────────────
     MVSS:
-        ROOT: '/home/ubuntu/data/siamrpn_training/data/mvss/sequences'
-        ANNO: '/home/ubuntu/data/siamrpn_training/data/mvss/train_pysot.json'
+        ROOT: '/path/to/training/data/mvss/sequences'
+        ANNO: '/path/to/training/data/mvss/train_pysot.json'
         FRAME_RANGE: 20
         NUM_USE: -1
         WEIGHT: 1.5
 
     # ── DUT-VTUAV (RGB+Thermal UAV, 500 seqs, 1.7M frames) ──────────────────
     DUTVTUAV:
-        ROOT: '/home/ubuntu/data/siamrpn_training/data/dut_vtuav/train'
-        ANNO: '/home/ubuntu/data/siamrpn_training/data/dut_vtuav/train_pysot.json'
+        ROOT: '/path/to/training/data/dut_vtuav/train'
+        ANNO: '/path/to/training/data/dut_vtuav/train_pysot.json'
         FRAME_RANGE: 50
         NUM_USE: -1
         WEIGHT: 2.5          # large-scale, high-quality — strong signal
 
     DUTVTUAV_VAL:
-        ROOT: '/home/ubuntu/data/siamrpn_training/data/dut_vtuav/test'
-        ANNO: '/home/ubuntu/data/siamrpn_training/data/dut_vtuav/test_pysot.json'
+        ROOT: '/path/to/training/data/dut_vtuav/test'
+        ANNO: '/path/to/training/data/dut_vtuav/test_pysot.json'
         FRAME_RANGE: 50
         NUM_USE: -1
 
     # ── DUT-Anti-UAV — EXCLUDED (RGB dataset, not IR-only) ───────────────────
     # DUTANTIUAV:
-    #     ROOT: '/home/ubuntu/data/siamrpn_training/data/dut_anti_uav/images'
-    #     ANNO: '/home/ubuntu/data/siamrpn_training/data/dut_anti_uav/train_pysot.json'
+    #     ROOT: '/path/to/training/data/dut_anti_uav/images'
+    #     ANNO: '/path/to/training/data/dut_anti_uav/train_pysot.json'
     #     FRAME_RANGE: 30
     #     WEIGHT: 2.0
 
     # ── Anti-UAV 300 (IR + RGB) ──────────────────────────────────────────────
     ANTIUAV300:
-        ROOT: '/home/ubuntu/data/siamrpn_training/data/anti_uav300/train'
-        ANNO: '/home/ubuntu/data/siamrpn_training/data/anti_uav300/train_pysot.json'
+        ROOT: '/path/to/training/data/anti_uav300/train'
+        ANNO: '/path/to/training/data/anti_uav300/train_pysot.json'
         FRAME_RANGE: 50
         NUM_USE: -1
         WEIGHT: 2.5          # same domain as AntiUAV410
 
     ANTIUAV300_VAL:
-        ROOT: '/home/ubuntu/data/siamrpn_training/data/anti_uav300/val'
-        ANNO: '/home/ubuntu/data/siamrpn_training/data/anti_uav300/val_pysot.json'
+        ROOT: '/path/to/training/data/anti_uav300/val'
+        ANNO: '/path/to/training/data/anti_uav300/val_pysot.json'
         FRAME_RANGE: 50
         NUM_USE: -1
 
     # ── BIRDSAI (TIR aerial wildlife, 48 real sequences) ─────────────────────
     BIRDSAI:
-        ROOT: '/home/ubuntu/data/siamrpn_training/data/birdsai/train'
-        ANNO: '/home/ubuntu/data/siamrpn_training/data/birdsai/train_pysot.json'
+        ROOT: '/path/to/training/data/birdsai/train'
+        ANNO: '/path/to/training/data/birdsai/train_pysot.json'
         FRAME_RANGE: 30
         NUM_USE: -1
         WEIGHT: 1.5          # unique domain boosts generalisation
 
     BIRDSAI_VAL:
-        ROOT: '/home/ubuntu/data/siamrpn_training/data/birdsai/test'
-        ANNO: '/home/ubuntu/data/siamrpn_training/data/birdsai/test_pysot.json'
+        ROOT: '/path/to/training/data/birdsai/test'
+        ANNO: '/path/to/training/data/birdsai/test_pysot.json'
         FRAME_RANGE: 30
         NUM_USE: -1
 
     # ── HIT-UAV (IR detection → pseudo-SOT, 2898 images) ────────────────────
     HITUAV:
-        ROOT: '/home/ubuntu/data/siamrpn_training/data/hit_uav/images'
-        ANNO: '/home/ubuntu/data/siamrpn_training/data/hit_uav/train_pysot.json'
+        ROOT: '/path/to/training/data/hit_uav/images'
+        ANNO: '/path/to/training/data/hit_uav/train_pysot.json'
         FRAME_RANGE: 5       # short range: pseudo-sequences from detections
         NUM_USE: -1
         WEIGHT: 1.0

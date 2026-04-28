@@ -9,10 +9,10 @@ import torch
 import torch.nn.functional as F
 import sys, os
 
-VIDEO      = "/home/ubuntu/Arquimea/wetransfer_test-videos-for-tracking_2025-11-11_0750/coyote.mp4"
-TMPL_ONNX  = "/home/ubuntu/siamrpn_poc/template_encoder_r50lt.onnx"
-SRCH_JSON  = "/home/ubuntu/siamrpn_poc/build/siamrpn++onnx/siamrpn++onnx/1/model.json"
-HEAD_ONNX  = "/home/ubuntu/siamrpn_poc/siamrpn_head_37.onnx"
+VIDEO      = "/path/to/video.mp4"
+TMPL_ONNX  = "template_encoder_r50lt.onnx"
+SRCH_JSON  = "build/siamrpn++onnx_255/siamrpn++onnx_255/1/model.json"
+HEAD_ONNX  = "siamrpn_head_dyn.onnx"
 
 INIT_BBOX  = (695, 345, 20, 30)   # x,y,w,h
 EXEMPLAR   = 127

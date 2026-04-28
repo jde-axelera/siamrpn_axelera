@@ -28,7 +28,7 @@ import onnx, onnxruntime as ort
 import numpy as np
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PYSOT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '..', '..', '..'))  # Arquimea/
+PYSOT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '..', 'pysot'))
 sys.path.insert(0, os.path.join(PYSOT_ROOT, 'pysot'))
 
 from pysot.core.config import cfg

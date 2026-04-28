@@ -2,23 +2,23 @@
 # Builds on Axelera Metis machine (Ubuntu 22.04, SDK 1.6)
 #
 # IMPORTANT: source the SDK venv before running to set AIPU firmware env vars:
-#   source /home/ubuntu/1.6/voyager-sdk/venv/bin/activate
+#   source <SDK_ROOT>/venv/bin/activate
 #
 # xcorr_head needs IR version ≤ 9 for ORT 1.17.1.  Generate once:
 #   python3 -c "import onnx; m=onnx.load('onnx/xcorr_head.onnx'); m.ir_version=8; onnx.save(m,'onnx/xcorr_head_ir8.onnx')"
 #
 # Usage:
 #   make -f Makefile_axelera
-#   source /home/ubuntu/1.6/voyager-sdk/venv/bin/activate
+#   source <SDK_ROOT>/venv/bin/activate
 #   ./track_split_axelera_cpp \
-#     --template_encoder /home/ubuntu/1.6/voyager-sdk/customers/arquimea/compiled_template_v2/compiled_model/model.json \
-#     --search_encoder   /home/ubuntu/1.6/voyager-sdk/customers/arquimea/compiled_search_v2/compiled_model/model.json \
-#     --xcorr_head       /home/ubuntu/final_trained/onnx/xcorr_head_ir8.onnx \
-#     --video            /home/ubuntu/Arquimea/ir_crop.mp4 \
-#     --output           /home/ubuntu/final_trained/inference_output/ir_axelera_cpp.mp4 \
+#     --template_encoder /path/to/compiled_template/compiled_model/model.json \
+#     --search_encoder   /path/to/compiled_search/compiled_model/model.json \
+#     --xcorr_head       onnx/xcorr_head_ir8.onnx \
+#     --video            /path/to/input.mp4 \
+#     --output           inference_output/output.mp4 \
 #     --init_bbox        348,147,38,84
 
-SDK     = /home/ubuntu/1.6/voyager-sdk
+SDK     = /opt/voyager-sdk
 
 AXR_INC = $(SDK)/venv/lib/python3.10/site-packages/axelera/include
 AXR_LIB     = $(SDK)/venv/lib/python3.10/site-packages/axelera/lib

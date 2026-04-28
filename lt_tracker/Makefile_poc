@@ -2,7 +2,7 @@
 # Builds on Axelera Metis machine (Ubuntu 22.04, Voyager SDK 1.6)
 #
 # Prerequisites:
-#   source /home/ubuntu/1.6/voyager-sdk/venv/bin/activate
+#   source <SDK_ROOT>/venv/bin/activate
 #
 # One-time model prep (on a workstation with PyTorch + pysot):
 #   export PYTHONPATH=/path/to/pysot:$PYTHONPATH
@@ -26,7 +26,7 @@
 #     --init_bbox        695,345,20,30 \
 #     --display
 
-SDK     = /home/ubuntu/1.6/voyager-sdk
+SDK     = /opt/voyager-sdk
 
 AXR_INC     = $(SDK)/venv/lib/python3.10/site-packages/axelera/include
 AXR_LIB     = $(SDK)/venv/lib/python3.10/site-packages/axelera/lib
