@@ -1,6 +1,6 @@
 # SiamRPN++ Object Tracker — Axelera Metis
 
-> **Large files** (model checkpoints, ONNX weights, compiled Metis models, and test videos) are not included in this repository due to size. To obtain them, email **jaydeep.de@axelera.ai**.
+> **Large files** (model checkpoints, ONNX weights, compiled Metis models, and test videos) are not included in this repository due to size. Download them from the **[model release Google Drive](https://drive.google.com/drive/folders/1yt2IpE78SLc4MJjnIyn7J-VNmP0J6sQ2?usp=sharing)**.
 
 SiamRPN++ tracker with ResNet-50 backbone, fine-tuned on IR/thermal drone datasets. Runs the backbone on Axelera Metis AIPU and the correlation head on CPU. Includes a particle filter for robust tracking under partial occlusion and motion blur.
 
@@ -68,9 +68,9 @@ git clone https://github.com/STVIR/pysot.git
 
 ### 2. Obtain the checkpoint
 
-Email **jaydeep.de@axelera.ai** to receive `checkpoints/best_model.pth`. Place it at `checkpoints/best_model.pth` inside the repo.
+Download `best_model.pth` from the **`ir_checkpoint/`** folder on the [model release Google Drive](https://drive.google.com/drive/folders/1yt2IpE78SLc4MJjnIyn7J-VNmP0J6sQ2?usp=sharing). Place it at `checkpoints/best_model.pth` inside the repo.
 
-If you also receive pre-compiled Metis models (`compiled_template/`, `compiled_search/`) and the pre-exported `onnx/` files, skip steps 3–5 and go straight to step 6.
+If you also download the pre-compiled Metis models (`ir_Metis/`) and pre-exported ONNX files (`ir_onnx/`), skip steps 3–5 and go straight to step 6.
 
 ### 3. Export ONNX from checkpoint
 
@@ -302,20 +302,21 @@ Template features are center-cropped from the compiled model output `(1,256,15,1
 └── env.yml                         conda environment spec
 ```
 
-**Not in repo — request via email:**
+**Not in repo — download from [Google Drive](https://drive.google.com/drive/folders/1yt2IpE78SLc4MJjnIyn7J-VNmP0J6sQ2?usp=sharing):**
 
-| File | Description |
-|---|---|
-| `checkpoints/best_model.pth` | IR fine-tuned checkpoint (epoch 444) |
-| `pretrained/sot_resnet50.pth` | SiamRPN++ SOT pretrained backbone |
-| `onnx/template_encoder.onnx` | Exported template encoder |
-| `onnx/search_encoder.onnx` | Exported search encoder |
-| `onnx/xcorr_head.onnx` | Exported xcorr head |
-| `onnx/xcorr_head_ir8.onnx` | IR v8 copy (required for C++ build) |
-| Compiled Metis models | `compiled_template_v2/`, `compiled_search_v2/` |
-| Test videos | `ir_crop.mp4`, `coyote.mp4`, and other test sequences |
-
-Contact: **jaydeep.de@axelera.ai**
+| Drive folder | File | Description |
+|---|---|---|
+| `ir_checkpoint/` | `best_model.pth` | IR fine-tuned checkpoint (epoch 444) |
+| `ir_onnx/` | `template_encoder.onnx` | Exported template encoder |
+| `ir_onnx/` | `search_encoder.onnx` | Exported search encoder |
+| `ir_onnx/` | `xcorr_head.onnx` | Exported xcorr head |
+| `ir_onnx/` | `xcorr_head_ir8.onnx` | IR v8 copy (required for C++ build) |
+| `ir_Metis/` | compiled models | `compiled_template/`, `compiled_search/` |
+| `LT_checkpoint/` | `lt.pth` | LT model pretrained weights |
+| `LT_onnx/` | `template_encoder_r50lt.onnx` | LT template encoder (CPU) |
+| `LT_onnx/` | `search_encoder_r50lt.onnx` | LT search encoder (for axcompile) |
+| `LT_onnx/` | `siamrpn_head_dyn.onnx` | LT head with dynamic spatial dims |
+| `LT_Metis/` | compiled search encoder | Compiled 255px search encoder for Metis |
 
 ---
 

@@ -5,6 +5,8 @@ running on the Axelera Metis AIPU and xcorr/head running on the host CPU.
 
 **SDK:** `<SDK_ROOT>` (e.g. `/opt/voyager-sdk`) — always `source <SDK_ROOT>/venv/bin/activate` first
 
+> **Model files** (checkpoint, ONNX, compiled Metis) are not in this repo. Download from **[Google Drive](https://drive.google.com/drive/folders/1yt2IpE78SLc4MJjnIyn7J-VNmP0J6sQ2?usp=sharing)** — use the `LT_checkpoint/`, `LT_onnx/`, and `LT_Metis/` folders.
+
 ---
 
 ## Performance
@@ -38,6 +40,8 @@ Time breakdown (255px, per frame):
 ---
 
 ## One-time Model Preparation
+
+> If you downloaded pre-exported files from the [Google Drive](https://drive.google.com/drive/folders/1yt2IpE78SLc4MJjnIyn7J-VNmP0J6sQ2?usp=sharing) (`LT_onnx/` and `LT_Metis/`), skip steps 1–4 and go straight to [Build](#build).
 
 Steps 1–3 run on a workstation with PyTorch + pysot installed. Step 4 runs on Metis.
 
