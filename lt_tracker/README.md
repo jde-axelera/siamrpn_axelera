@@ -41,9 +41,24 @@ Time breakdown (255px, per frame):
 
 ## One-time Model Preparation
 
-> If you downloaded pre-exported files from the [Google Drive](https://drive.google.com/drive/folders/1yt2IpE78SLc4MJjnIyn7J-VNmP0J6sQ2?usp=sharing) (`LT_onnx/` and `LT_Metis/`), skip steps 1–4 and go straight to [Build](#build).
+> **Fastest path:** Download from [Google Drive](https://drive.google.com/drive/folders/1yt2IpE78SLc4MJjnIyn7J-VNmP0J6sQ2?usp=sharing) using gdown (Python API — `gdown -m` CLI is unreliable for large files):
+>
+> ```python
+> import gdown, os
+> os.makedirs('lt_tracker', exist_ok=True)
+> # LT checkpoint
+> gdown.download(id='10E55GLW9W2pltl9eWEOZuFarFiJWgsYf', output='lt_tracker/lt.pth')
+> # LT head ONNX (siamrpn_head_37.onnx — then run step 3 to make dynamic version)
+> gdown.download(id='1zEb7T6YZZEMTKD9roBlADdT9mvtNJLck', output='lt_tracker/siamrpn_head_37.onnx')
+> # LT compiled search encoder (255px)
+> gdown.download_folder(id='1j4eBYi6zqWi_dI57iVUY0XjiuWkX2f-H', output='lt_tracker/build/siamrpn++onnx_255')
+> ```
+>
+> Then run step 3 (dynamic head) and steps 1–2 (export template/search encoders — requires PyTorch workstation). Skip step 4 if you downloaded the compiled encoder above.
+>
+> **Note:** The compiled encoder from Drive downloads into `build/siamrpn++onnx_255/1/model.json` (one directory level shallower than the default run command). Use `--search_encoder build/siamrpn++onnx_255/1/model.json` when running.
 
-Steps 1–3 run on a workstation with PyTorch + pysot installed. Step 4 runs on Metis.
+Steps 1–2 run on a workstation with PyTorch + pysot installed. Steps 3–4 run on Metis.
 
 ### 1. Export template encoder
 
@@ -119,10 +134,10 @@ axcompile -i onnx_files/search_encoder_r50lt.onnx \
 On Metis:
 
 ```bash
-ssh <user>@<METIS_IP>
 source <SDK_ROOT>/venv/bin/activate
-cd <WORK_DIR>
-make -f Makefile_poc
+cd lt_tracker/          # inside the cloned repo
+# Pass your SDK path (default in Makefile is /opt/voyager-sdk)
+make -f Makefile_poc SDK=<SDK_ROOT>
 ```
 
 ### Makefile variables
@@ -151,14 +166,16 @@ Always activate the SDK environment first:
 
 ```bash
 source <SDK_ROOT>/venv/bin/activate
-cd <WORK_DIR>
+cd lt_tracker/      # inside cloned repo
 ```
 
-### Default (255px encoder, 25.7 fps)
+### Default (255px encoder, ~30 fps)
+
+If you downloaded the compiled encoder from Google Drive, the model.json is one level shallower:
 
 ```bash
 ./poc_siamrpn_cpp \
-    --search_encoder   build/siamrpn++onnx_255/siamrpn++onnx_255/1/model.json \
+    --search_encoder   build/siamrpn++onnx_255/1/model.json \
     --template_encoder template_encoder_r50lt.onnx \
     --head             siamrpn_head_dyn.onnx \
     --video            /path/to/video.mp4 \
