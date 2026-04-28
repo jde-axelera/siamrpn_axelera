@@ -31,6 +31,7 @@
 #include <cstdio>
 #include <future>
 #include <iostream>
+#include <random>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -80,6 +81,10 @@ struct Config {
     bool display    = false;
     int  bbox_x = 0, bbox_y = 0, bbox_w = 0, bbox_h = 0;
     int  max_frames = -1;
+
+    bool  use_pf  = true;
+    int   pf_n    = 200;
+    float pf_std  = 12.0f;   // motion noise std (pixels) per frame
 };
 
 // ─── Tensor ──────────────────────────────────────────────────────────────────
@@ -443,6 +448,81 @@ Best select_best(const std::vector<float>& scores, const std::vector<BBox>& bbox
                bboxes[best].w  / scale_z, bboxes[best].h  / scale_z } };
 }
 
+// ─── Particle Filter ─────────────────────────────────────────────────────────
+// Runs in normal mode only. Particles live in image coordinates.
+// Predict: add Gaussian motion noise. Update: weight by max score at each
+// particle's cell in the score grid. Estimate: weighted mean → new center.
+struct PF {
+    std::vector<float> px, py, w;
+    int n = 0;
+
+    void init(float cx, float cy, int n_, float spread, std::mt19937& rng) {
+        n = n_;
+        px.resize(n); py.resize(n); w.assign(n, 1.f / n);
+        std::normal_distribution<float> d(0.f, spread);
+        for (int i = 0; i < n; i++) { px[i] = cx + d(rng); py[i] = cy + d(rng); }
+    }
+
+    void predict(float std_px, std::mt19937& rng) {
+        std::normal_distribution<float> d(0.f, std_px);
+        for (int i = 0; i < n; i++) { px[i] += d(rng); py[i] += d(rng); }
+    }
+
+    // Build ss×ss max-score grid. scores layout: scores[a*ss*ss + r*ss + c].
+    static std::vector<float> build_grid(const std::vector<float>& scores, int AN, int ss) {
+        std::vector<float> g(ss * ss, 0.f);
+        for (int a = 0; a < AN; a++)
+            for (int p = 0; p < ss * ss; p++)
+                g[p] = std::max(g[p], scores[a * ss * ss + p]);
+        return g;
+    }
+
+    // Weight particles by score at their image position in the score grid.
+    // Score grid is centred on (img_cx, img_cy) with spacing stride/scale_z.
+    void update(const std::vector<float>& grid, float img_cx, float img_cy,
+                float scale_z, int stride, int ss) {
+        float wsum = 0.f;
+        for (int i = 0; i < n; i++) {
+            float gc = (px[i] - img_cx) * scale_z / stride + ss * 0.5f;
+            float gr = (py[i] - img_cy) * scale_z / stride + ss * 0.5f;
+            int c = std::max(0, std::min(ss - 1, (int)std::round(gc)));
+            int r = std::max(0, std::min(ss - 1, (int)std::round(gr)));
+            w[i] = grid[r * ss + c];
+            wsum += w[i];
+        }
+        if (wsum < 1e-6f) { std::fill(w.begin(), w.end(), 1.f / n); return; }
+        for (auto& wi : w) wi /= wsum;
+    }
+
+    void resample(std::mt19937& rng) {
+        std::vector<float> cum(n);
+        cum[0] = w[0];
+        for (int i = 1; i < n; i++) cum[i] = cum[i-1] + w[i];
+        std::vector<float> npx(n), npy(n);
+        std::uniform_real_distribution<float> u(0.f, 1.f / n);
+        float r = u(rng);
+        int j = 0;
+        for (int i = 0; i < n; i++) {
+            float T = r + (float)i / n;
+            while (j < n - 1 && cum[j] < T) j++;
+            npx[i] = px[j]; npy[i] = py[j];
+        }
+        px = npx; py = npy;
+        std::fill(w.begin(), w.end(), 1.f / n);
+    }
+
+    std::pair<float,float> estimate() const {
+        float ex = 0.f, ey = 0.f;
+        for (int i = 0; i < n; i++) { ex += w[i] * px[i]; ey += w[i] * py[i]; }
+        return {ex, ey};
+    }
+
+    void recenter(float cx, float cy) {
+        for (int i = 0; i < n; i++) { px[i] = cx; py[i] = cy; }
+        std::fill(w.begin(), w.end(), 1.f / n);
+    }
+};
+
 // Thread-local timing accumulators for xcorr and head (summed at end of main).
 thread_local double tl_t_xcorr_only = 0;
 thread_local double tl_t_head_only  = 0;
@@ -508,6 +588,9 @@ int main(int argc, char* argv[]) {
         else if (a == "--instance_size"       && i+1 < argc) cfg.instance_size      = std::stoi(argv[++i]);
         else if (a == "--lost_instance_size"  && i+1 < argc) cfg.lost_instance_size = std::stoi(argv[++i]);
         else if (a == "--display")                           cfg.display            = true;
+        else if (a == "--no_pf")                             cfg.use_pf             = false;
+        else if (a == "--pf_n"                && i+1 < argc) cfg.pf_n              = std::stoi(argv[++i]);
+        else if (a == "--pf_std"              && i+1 < argc) cfg.pf_std            = std::stof(argv[++i]);
         else if (a == "--init_bbox"           && i+1 < argc)
             sscanf(argv[++i], "%d,%d,%d,%d",
                    &cfg.bbox_x, &cfg.bbox_y, &cfg.bbox_w, &cfg.bbox_h);
@@ -617,6 +700,8 @@ int main(int argc, char* argv[]) {
     std::vector<Tensor> zf;           // template kernels (set at init)
     bool inited = false;
     bool longterm = false;
+    PF pf;
+    std::mt19937 pf_rng(42);
 
     auto now_ms = []() {
         return duration_cast<microseconds>(
@@ -668,6 +753,8 @@ int main(int argc, char* argv[]) {
                         cv::FONT_HERSHEY_SIMPLEX, 0.6, {0,255,255}, 1);
             if (writer.isOpened()) writer.write(frame);
             if (cfg.display) { cv::imshow("poc_siamrpn++ [Q/ESC=quit]", frame); cv::waitKey(1); }
+            if (cfg.use_pf)
+                pf.init((float)cx, (float)cy, cfg.pf_n, 5.0f, pf_rng);
             inited = true; fi++; continue;
         }
 
@@ -708,6 +795,13 @@ int main(int argc, char* argv[]) {
             // the correction adds 0 + inst/2 - inst/2 = 0, so no-op. ✓
             all_scores = scores;
             all_bboxes = bboxes;
+
+            if (cfg.use_pf) {
+                auto grid = PF::build_grid(scores, AN, ss);
+                pf.predict(cfg.pf_std, pf_rng);
+                pf.update(grid, (float)cx, (float)cy, scale_z, cfg.anchor_stride, ss);
+                pf.resample(pf_rng);
+            }
 
         } else {
             // ── LT mode: 2×2 tiled search ─────────────────────────────────
@@ -806,10 +900,20 @@ int main(int argc, char* argv[]) {
         // ── State update (Python update block) ─────────────────────────────
         float best_score = best.score;
         if (best_score >= cfg.conf_low) {
-            cx = best.bbox.cx + cx;
-            cy = best.bbox.cy + cy;
+            if (!longterm && cfg.use_pf) {
+                auto [pcx, pcy] = pf.estimate();
+                cx = pcx;
+                cy = pcy;
+            } else {
+                cx = best.bbox.cx + cx;
+                cy = best.bbox.cy + cy;
+            }
             tw = tw * (1 - best.lr) + best.bbox.w * best.lr;
             th = th * (1 - best.lr) + best.bbox.h * best.lr;
+        } else if (cfg.use_pf) {
+            // Low confidence — re-centre particles on the argmax prediction so
+            // they don't drift unconstrained while the target is temporarily lost.
+            pf.recenter((float)(best.bbox.cx + cx), (float)(best.bbox.cy + cy));
         }
         // Clamp to frame
         cx = std::max(0.0, std::min((double)VW, cx));
@@ -819,8 +923,12 @@ int main(int argc, char* argv[]) {
 
         // ── LT mode transition ─────────────────────────────────────────────
         if (cfg.enable_lt_mode) {
+            bool was_lt = longterm;
             if (best_score < cfg.conf_low)       longterm = true;
             else if (best_score > cfg.conf_high) longterm = false;
+            // Re-centre PF when returning from LT so particles track from new position.
+            if (was_lt && !longterm && cfg.use_pf)
+                pf.recenter((float)cx, (float)cy);
         }
 
         // ── Visualization ──────────────────────────────────────────────────
