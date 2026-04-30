@@ -171,7 +171,13 @@ axcompile \
     --output       compiled_template/
 ```
 
-`transform_search.py` and `transform_template.py` in `scripts/` define `get_preprocess_transform(image)` — BGR float32 CHW, [0, 255], no ImageNet normalisation.
+`transform_search.py` and `transform_template.py` in `scripts/` define `get_preprocess_transform(image)` — RGB CHW float32 normalised with ImageNet mean/std, matching the IR-tuned model's training preprocessing.
+
+> **Important:** axcompile looks for the transform file by name in the SDK customers directory, not in the repo. Copy both files before compiling:
+> ```bash
+> cp scripts/transform_search.py   <SDK_ROOT>/customers/<your_dir>/
+> cp scripts/transform_template.py <SDK_ROOT>/customers/<your_dir>/
+> ```
 
 ### 6. Activate the SDK environment and set PYTHONPATH
 
@@ -318,6 +324,9 @@ Template features are center-cropped from the compiled model output `(1,256,15,1
 │   └── track_config_axelera.json   example Metis inference config
 ├── scripts/
 │   ├── export_onnx_split.py        split ONNX export
+│   ├── extract_cal_images.py       extract calibration frames from videos
+│   ├── transform_search.py         axcompile calibration transform — IR search encoder
+│   ├── transform_template.py       axcompile calibration transform — IR template encoder
 │   ├── analyze_anchors.py          compute anchor ratios from annotations
 │   ├── train_siamrpn_aws.py        training script
 │   ├── track_split.py              Python inference (GPU, ONNX Runtime)
