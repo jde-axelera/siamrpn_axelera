@@ -125,7 +125,12 @@ axcompile -i onnx_files/search_encoder_r50lt.onnx \
     --transform transform_search.py
 ```
 
-`transform_search.py` and calibration images should be placed in the Metis SDK `customers/` directory.
+`lt_tracker/scripts/transform_search.py` (BGR CHW float32 [0, 255], no ImageNet normalisation — matches the standard pysot R50 preprocessing) and calibration images must be placed in the Metis SDK `customers/` directory before running axcompile:
+
+```bash
+cp lt_tracker/scripts/transform_search.py <SDK_ROOT>/customers/<your_dir>/
+cp -r cal_images/ <SDK_ROOT>/customers/<your_dir>/
+```
 
 ---
 
