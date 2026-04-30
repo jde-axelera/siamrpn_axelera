@@ -5,6 +5,8 @@ running on the Axelera Metis AIPU and xcorr/head running on the host CPU.
 
 **SDK:** `<SDK_ROOT>` (e.g. `/opt/voyager-sdk`) — always `source <SDK_ROOT>/venv/bin/activate` first
 
+> **Raspberry Pi 5:** fully supported via Metis M.2 HAT. The Makefile auto-detects `aarch64` and uses `-mcpu=cortex-a76` (NEON) instead of `-mavx2`. Set `AXELERA_CONFIGURE_BOARD=,20` if inference crashes (RPi5 power budget). See the main README for full RPi5 setup instructions.
+
 > **Model files** (checkpoint, ONNX, compiled Metis) are not in this repo. Download from **[Models Drive](https://drive.google.com/drive/folders/1yt2IpE78SLc4MJjnIyn7J-VNmP0J6sQ2?usp=sharing)** — use the `LT_checkpoint/`, `LT_onnx/`, and `LT_Metis/` folders. Test videos: **[Videos Drive](https://drive.google.com/drive/folders/1u9LNrtFh-FO3QFWKxQjHW6aSuus8aBZk?usp=sharing)** (`ir_crop.mp4`, `coyote_OrinMuggleSam.mp4`).
 
 ---

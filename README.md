@@ -227,6 +227,84 @@ Writes a `_stats.json` alongside the video with fps, frame count, and timing.
 
 ---
 
+## Raspberry Pi 5 + Metis M.2
+
+The Voyager SDK runs on Raspberry Pi 5 with a Metis M.2 card (tested with Raspberry Pi M.2 HAT+ and Seeed Studio M.2 Dual HAT). The inference pipeline is identical to the server setup — the Metis AIPU still handles both encoders and xcorr_head still runs on the ARM CPU.
+
+### 1. Enable PCIe Gen3 on the RPi5
+
+Follow the official guide to enable PCIe Gen3 on your RPi5 before inserting the M.2 card:
+[https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#pcie-gen-3-0](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#pcie-gen-3-0)
+
+### 2. Install Voyager SDK inside Docker
+
+Follow the standard Axelera Docker container guide:
+[https://support.axelera.ai/hc/en-us/articles/25953148201362-Install-Voyager-SDK-in-a-Docker-Container](https://support.axelera.ai/hc/en-us/articles/25953148201362-Install-Voyager-SDK-in-a-Docker-Container)
+
+The RPi5 image is ARM64 — no changes to the tracker code or configs are required.
+
+### 3. Compile the encoders on a faster machine
+
+`axcompile` on RPi5 is very slow. Compile on your AWS server or workstation (x86_64) and copy the compiled model folders to the RPi5:
+
+```bash
+# On server — compile as normal (steps 3–5 in Quick Start)
+# Then copy to RPi5:
+scp -r compiled_search/ compiled_template/ user@raspberrypi:/path/to/siamrpn_axelera/
+```
+
+The compiled Metis models are architecture-independent — a model compiled on x86_64 runs on the RPi5 Metis hardware unchanged.
+
+### 4. MVM utilisation limit (important)
+
+The RPi5 M.2 slot has a limited power budget. If inference crashes, cap MVM utilisation at 20%:
+
+```bash
+AXELERA_CONFIGURE_BOARD=,20 python track_split_axelera.py --config configs/track_config_axelera.json
+```
+
+The scripts will also print a reminder if running on aarch64 without this variable set.
+
+### 5. OpenGL ES display (VideoCore VII)
+
+The RPi5's VideoCore VII GPU (OpenGL ES 3.1) can be used for rendering the tracking overlay. Inside the Docker container:
+
+```bash
+sudo apt update && sudo apt install -y mesa-utils libgl1-mesa-dri
+sudo chown root:video /dev/dri/renderD128
+
+# Verify: should show "OpenGL renderer string: V3D 7.1"
+glxinfo | grep "OpenGL renderer"
+
+# Run with OpenGL ES rendering
+AXELERA_OPENGL_BACKEND=gles,3,1 python track_split_axelera.py --config configs/track_config_axelera.json
+```
+
+Without `AXELERA_OPENGL_BACKEND`, the tracker defaults to OpenCV rendering, which also works fine.
+
+### 6. Build the C++ tracker on RPi5
+
+The Makefile auto-detects `aarch64` and switches to `-mcpu=cortex-a76` (NEON + FP16 SIMD) in place of `-mavx2 -mfma`. No manual changes needed:
+
+```bash
+source <SDK_ROOT>/venv/bin/activate
+make -f Makefile_axelera SDK=/path/to/voyager-sdk
+```
+
+The dw-xcorr loop in the C++ binary auto-vectorises with NEON under `-mcpu=cortex-a76`.
+
+### Expected performance on RPi5 (estimated)
+
+| Mode | Encoder | xcorr_head | Est. fps |
+|---|---|---|---|
+| Python + PF | Metis AIPU | ARM NEON (XNNPACK ORT) | ~15 fps |
+| Python no-PF | Metis AIPU | ARM NEON (XNNPACK ORT) | ~18 fps |
+| C++ + PF | Metis AIPU | ARM NEON (auto-vec) | ~20 fps |
+
+> At 20% MVM limit the encoder may take ~25–30 ms/frame vs 15 ms on the Metis server. The xcorr_head (ARM NEON) is ~20–22 ms/frame. If power is not constrained, remove `AXELERA_CONFIGURE_BOARD` and test stability first.
+
+---
+
 ## Quick Start — C++ Inference on Metis
 
 Complete **steps 1–5** from the Python section above, then:

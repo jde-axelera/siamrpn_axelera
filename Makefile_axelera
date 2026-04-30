@@ -25,14 +25,25 @@ AXR_LIB     = $(SDK)/venv/lib/python3.10/site-packages/axelera/lib
 AXR_RTLIBS  = $(SDK)/venv/lib/python3.10/site-packages/axelera_runtime.libs
 AXR_SO      = $(AXR_LIB)/libaxruntime.so
 
-ORT_INC = $(SDK)/operators/onnxruntime/onnxruntime-linux-x64-1.17.1/include
+# Architecture-specific ORT include path and SIMD flags.
+# On Raspberry Pi 5 (aarch64) the SDK ships onnxruntime-linux-aarch64-*;
+# on x86_64 servers it ships onnxruntime-linux-x64-*.
+ARCH := $(shell uname -m)
+ifeq ($(ARCH),aarch64)
+    ORT_INC    = $(SDK)/operators/onnxruntime/onnxruntime-linux-aarch64-1.17.1/include
+    SIMD_FLAGS = -mcpu=cortex-a76
+else
+    ORT_INC    = $(SDK)/operators/onnxruntime/onnxruntime-linux-x64-1.17.1/include
+    SIMD_FLAGS = -mavx2 -mfma
+endif
+
 ORT_LIB = $(SDK)/operators/lib
 ORT_SO  = $(ORT_LIB)/libonnxruntime.so
 
 CV_FLAGS = $(shell pkg-config --cflags opencv4)
 CV_LIBS  = $(shell pkg-config --libs opencv4)
 
-CXXFLAGS = -O3 -std=c++17 \
+CXXFLAGS = -O3 $(SIMD_FLAGS) -std=c++17 \
            -I$(AXR_INC) \
            -I$(ORT_INC) \
            $(CV_FLAGS)

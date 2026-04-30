@@ -173,12 +173,25 @@ def build_axelera_tracker(c, raw_store, ort, cfg, ModelBuilder, build_tracker):
     tmpl_enc_ax = AxeleraEncoder(ctx, tmpl_model, aipu_cores=4)
     srch_enc_ax = AxeleraEncoder(ctx, srch_model, aipu_cores=4)
 
-    # xcorr_head stays on CPU ONNX (dynamic-weight grouped conv not Metis-compilable)
+    # xcorr_head stays on CPU ONNX (dynamic-weight grouped conv not Metis-compilable).
+    # On aarch64 (e.g. Raspberry Pi 5) XNNPACK gives ~2× faster ARM NEON inference.
+    import platform as _platform
     opts = ort.SessionOptions()
     opts.log_severity_level = 3
-    xcorr_hd = ort.InferenceSession(c['paths']['xcorr_head'], opts,
-                                    providers=['CPUExecutionProvider'])
-    print('Providers — template/search: Axelera Metis  |  xcorr_head: CPU')
+    _xnnpack_opts = {'intra_op_num_threads': 4} if _platform.machine() == 'aarch64' else {}
+    _cpu_providers = (
+        [('XNNPACKExecutionProvider', _xnnpack_opts), 'CPUExecutionProvider']
+        if _platform.machine() == 'aarch64'
+        else ['CPUExecutionProvider']
+    )
+    xcorr_hd = ort.InferenceSession(c['paths']['xcorr_head'], opts, providers=_cpu_providers)
+    _xcorr_ep = 'XNNPACK+CPU' if _platform.machine() == 'aarch64' else 'CPU'
+    print(f'Providers — template/search: Axelera Metis  |  xcorr_head: {_xcorr_ep}')
+
+    # Raspberry Pi 5 power note: if inference crashes, limit MVM utilisation to 20%:
+    #   AXELERA_CONFIGURE_BOARD=,20 python track_split_axelera.py --config ...
+    if _platform.machine() == 'aarch64' and not os.environ.get('AXELERA_CONFIGURE_BOARD'):
+        print('  [RPi5] Tip: if inference crashes, set AXELERA_CONFIGURE_BOARD=,20')
 
     _zf = {}
 
